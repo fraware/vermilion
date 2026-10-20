@@ -76,10 +76,16 @@ def classify_lean(returncode: int, stdout: str, stderr: str) -> Outcome:
             return Outcome("infrastructure", "non-object checker JSON")
         if message.get("$message_type") != "diagnostic" or message.get("level") != "error":
             continue
-        errors += 1
+        metadata = message.get("vermilion") or {}
         code = (message.get("code") or {}).get("code")
+        if (code in _REJECT_CODES and metadata.get("covered_by_twin") is True):
+            # vrml_check uses the normal obligation diagnostic schema as an
+            # informational receipt for a previously kernel-checked twin.
+            # Such rows accompany exit 0 and are not failed obligations.
+            continue
+        errors += 1
         spans = message.get("spans")
-        obligation = (message.get("vermilion") or {}).get("obligation")
+        obligation = metadata.get("obligation")
         if (code not in _REJECT_CODES or not isinstance(obligation, str)
                 or not obligation or not isinstance(spans, list) or not spans
                 or not any(isinstance(span, dict) and span.get("is_primary")
