@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: vermilion-native-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   protocol:
     name: Python protocol checks
@@ -24,6 +28,7 @@ jobs:
 
   native:
     name: Rust, Verus and Lean native acceptance
+    needs: protocol
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:

@@ -50,9 +50,9 @@ class OutcomeTests(unittest.TestCase):
         self.assertEqual(classify_lean(0, diagnostic, "").status, "infrastructure")
 
     def test_verus_proof_failure_not_compiler_failure(self):
-        stderr = ("error: postcondition not satisfied\\n"
-                  "  --> tests/differential/x.rs:7:11\\n"
-                  "error: aborting due to 1 previous error\\n"
+        stderr = ("error: postcondition not satisfied\n"
+                  "  --> tests/differential/x.rs:7:11\n"
+                  "error: aborting due to 1 previous error\n"
                   "verification results:: 0 verified, 1 errors")
         self.assertEqual(classify_verus(1, "", stderr).status, "rejected")
 
