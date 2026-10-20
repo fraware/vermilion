@@ -25,6 +25,7 @@ jobs:
         run: |
           python3 -m py_compile scripts/run_differential.py scripts/differential_outcomes.py scripts/differential_soundness.py scripts/check_capture_goals.py
           python3 -m unittest discover -s tests -p test_differential_outcomes.py -v
+          python3 -m unittest discover -s tests -p test_capture_goal_guard.py -v
 
   native:
     name: Rust, Verus and Lean native acceptance

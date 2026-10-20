@@ -13,6 +13,24 @@ CASES = (
     ("c_hygiene_06_bounded", "bounded", "forall", "<"),
 )
 
+def obligation_file(manifest: dict, record: dict) -> str:
+    """Find each theorem's generated file across both supported modes.
+
+    Per-file records inherit the module's Lean file. Per-function records
+    carry their own file path. Unknown modes and incomplete records fail.
+    """
+    mode = manifest.get("mode", "per-file")
+    if mode == "per-file":
+        filename = record.get("lean_file") or manifest.get("lean_file")
+    elif mode == "per-function":
+        filename = record.get("lean_file")
+    else:
+        raise ValueError(f"unexpected emission mode: {mode}")
+    if not isinstance(filename, str) or not filename:
+        raise ValueError(f"missing obligation Lean file for mode {mode}")
+    return filename
+
+
 def inspect(root: Path) -> list[str]:
     errors = []
     root = root.resolve()
@@ -31,9 +49,8 @@ def inspect(root: Path) -> list[str]:
                 raise ValueError(f"no obligation found for {function}")
             found = False
             for rec in matches:
-                name, statement_hash, filename = (
-                    rec["name"], rec["statement_hash"], rec["lean_file"]
-                )
+                name, statement_hash = rec["name"], rec["statement_hash"]
+                filename = obligation_file(manifest, rec)
                 if not all(isinstance(x, str) and x for x in (name, statement_hash, filename)):
                     raise ValueError("invalid obligation metadata")
                 file = (root / filename).resolve()
