@@ -24,6 +24,8 @@ import threading
 import time
 from pathlib import Path
 
+from differential_outcomes import classify_verus, classify_lean
+
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ROOT / "tests" / "differential"
 OUT = ROOT / "docs" / "reports" / "generated"
@@ -156,7 +158,7 @@ def main() -> int:
         lean_digest.update(source.read_bytes())
     environment = "|".join([
         stamp(verus), stamp(direct), stamp(vrml_gen), stamp(check),
-        lean_digest.hexdigest(), emit_mode,
+        lean_digest.hexdigest(), emit_mode, "classified-outcomes-v3",
     ])
     cache_path = ROOT / ".vermilion" / "differential-cache.json"
     try:
@@ -222,7 +224,9 @@ def main() -> int:
             capture_output=True, text=True, cwd=ROOT,
             env=env | {"VERUS_VIR_EXPORT": str(export)})
         verus_seconds = time.monotonic() - started
-        verus_pass = verus_run.returncode == 0
+        verus_outcome = classify_verus(
+            verus_run.returncode, verus_run.stdout, verus_run.stderr)
+        verus_pass = verus_outcome.passed
         verus_lines = [int(line) for line in re.findall(
             rf"--> {re.escape(str(rel))}:(\d+):", verus_run.stderr)]
 
@@ -236,20 +240,28 @@ def main() -> int:
             emit = sh([str(vrml_gen), "--mode", emit_mode, str(ir)])
         if emit.returncode != 0:
             progress.advance(case.stem)
-            return {"verus_pass": verus_pass, "translation_failed": True}
+            return {"verus_pass": verus_pass, "translation_failed": True,
+                    "verus_outcome": verus_outcome.status}
         manifest = CASES / "generated" / f"{case.stem}.json"
         progress.show(case.stem, "lean judging obligations")
         check_run = sh([str(check), str(manifest)])
         vermilion_seconds = time.monotonic() - started
+        lean_outcome = classify_lean(
+            check_run.returncode, check_run.stdout, check_run.stderr)
         lean_lines = sorted({
             span["line_start"]
             for line in check_run.stdout.splitlines()
             if line.startswith("{")
-            for span in json.loads(line).get("spans", [])})
+            for message in [json.loads(line)]
+            for span in message.get("spans", [])
+            if isinstance(span, dict) and isinstance(span.get("line_start"), int)})
         progress.advance(case.stem)
         return {
             "verus_pass": verus_pass, "verus_lines": verus_lines,
-            "lean_pass": check_run.returncode == 0, "lean_lines": lean_lines,
+            "lean_pass": lean_outcome.passed, "lean_lines": lean_lines,
+            "verus_outcome": verus_outcome.status,
+            "lean_outcome": lean_outcome.status,
+            "outcome_detail": f"{verus_outcome.reason}; {lean_outcome.reason}",
             "verus_seconds": round(verus_seconds, 3),
             "vermilion_seconds": round(vermilion_seconds, 3),
         }
@@ -281,12 +293,21 @@ def main() -> int:
         results[stem] = future.result()
     pool.shutdown()
 
+    # Infrastructure failures must fail independently of the parity gate.
+    infrastructure_failures = []
     # Verdicts, in deterministic case order.
     for case, expect_pass, expect_line, key in prepared:
         result = results[case.stem]
         if result.get("translation_failed"):
+            infrastructure_failures.append((case.stem, "translation failed"))
             rows.append((case.stem, result["verus_pass"], None,
                          "translation failed", False, ""))
+            continue
+        if (result.get("verus_outcome") not in ("verified", "rejected")
+                or result.get("lean_outcome") not in ("verified", "rejected")):
+            infrastructure_failures.append((case.stem, result.get("outcome_detail", "unclassified")))
+            rows.append((case.stem, None, None, "infrastructure failure", False,
+                         result.get("outcome_detail", "unclassified")))
             continue
         verus_pass = result["verus_pass"]
         verus_lines = result["verus_lines"]
@@ -295,6 +316,9 @@ def main() -> int:
         cache["cases"][case.stem] = {
             "key": key, "verus_pass": verus_pass, "verus_lines": verus_lines,
             "lean_pass": lean_pass, "lean_lines": lean_lines,
+            "verus_outcome": result["verus_outcome"],
+            "lean_outcome": result["lean_outcome"],
+            "outcome_detail": result.get("outcome_detail", ""),
             "verus_seconds": result.get("verus_seconds"),
             "vermilion_seconds": result.get("vermilion_seconds"),
         }
@@ -350,6 +374,10 @@ def main() -> int:
     ]
     (OUT / "differential-m1-results.md").write_text("\n".join(lines))
     print("\n".join(lines))
+    if infrastructure_failures:
+        for name, detail in infrastructure_failures:
+            print(f"infrastructure failure in {name}: {detail}", file=sys.stderr)
+        return 2
     return 0 if parity >= GATE else 1
 
 
