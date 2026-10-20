@@ -18,10 +18,11 @@ _CRASH_MARKERS = re.compile(
 _RUST_ERROR_CODE = re.compile(r"(?m)^\s*error\[E\d{4}\]:")
 _VERUS_INFRA_ERRORS = re.compile(
     r"(?im)^\s*error(?:\[[^]\n]+\])?:\s*(?:"
-    r"unresolved import|cannot find|could not find|failed to|"
-    r"unsupported feature|unsupported syntax|not implemented|"
+    r"unresolved import|cannot find|could not find|"
+    r"failed to (?:load|compile|open|read|invoke|execute|import)|"
+    r"unsupported (?:feature|syntax)|not implemented|"
     r"mismatched types|expected (?:type|identifier|expression|token)|"
-    r"aborting due to|unknown (?:feature|attribute|type)|"
+    r"unknown (?:feature|attribute|type)|"
     r"cannot infer type)\b"
 )
 _LEAN_INFRA_ERRORS = re.compile(
