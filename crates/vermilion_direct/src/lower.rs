@@ -1467,6 +1467,152 @@ fn annotate_span(error: String, raw: &vir::messages::Span) -> String {
     )
 }
 
+// Capture-avoiding naming for VIR binders lowered under SST substitutions.
+// Reserve all names in substitutions, including nested binders and triggers.
+fn reserve_expr_names(expr: &Expr, taken: &mut std::collections::HashSet<String>) {
+    match expr {
+        Expr::Var(name) => { taken.insert(name.clone()); }
+        Expr::Int(_) | Expr::StrLit(_) | Expr::True | Expr::False
+        | Expr::SeqEmpty(_) | Expr::SetEmpty(_) | Expr::MapEmpty(_, _)
+        | Expr::MultisetEmpty(_) => {}
+        Expr::Binary(_, a, b) | Expr::SeqPush(a, b) | Expr::SeqIndex(a, b)
+        | Expr::SeqAdd(a, b) | Expr::SeqNew(a, b)
+        | Expr::BitOp(_, _, _, a, b) => {
+            reserve_expr_names(a, taken);
+            reserve_expr_names(b, taken);
+        }
+        Expr::Not(a) | Expr::URange(_, a) | Expr::SRange(_, a)
+        | Expr::NatClip(a) | Expr::SignedClip(_, a) | Expr::SeqLen(a)
+        | Expr::SeqToMultiset(a) | Expr::FieldOf(_, _, _, a)
+        | Expr::IsVariant(_, _, a) => reserve_expr_names(a, taken),
+        Expr::Ite(a, b, c) | Expr::SeqUpdate(a, b, c)
+        | Expr::SeqSubrange(a, b, c) => {
+            reserve_expr_names(a, taken);
+            reserve_expr_names(b, taken);
+            reserve_expr_names(c, taken);
+        }
+        Expr::VstdApply(_, args) | Expr::Coll(_, args)
+        | Expr::Apply(_, _, args) | Expr::Ctor(_, _, _, args) => {
+            for arg in args { reserve_expr_names(arg, taken); }
+        }
+        Expr::Quant(_, binders, triggers, body) => {
+            for binder in binders { taken.insert(binder.name.clone()); }
+            for group in triggers {
+                for trigger in group { reserve_expr_names(trigger, taken); }
+            }
+            reserve_expr_names(body, taken);
+        }
+        Expr::Choose(binder, triggers, body) => {
+            taken.insert(binder.name.clone());
+            for group in triggers {
+                for trigger in group { reserve_expr_names(trigger, taken); }
+            }
+            reserve_expr_names(body, taken);
+        }
+        Expr::Lambda(binders, body) => {
+            for binder in binders { taken.insert(binder.name.clone()); }
+            reserve_expr_names(body, taken);
+        }
+        Expr::CallFn(function, args) => {
+            reserve_expr_names(function, taken);
+            for arg in args { reserve_expr_names(arg, taken); }
+        }
+    }
+}
+
+/// Free names in substitution images and symbolic registry values must remain
+/// free below a quantifier, choose, or lambda binder.
+fn binding_occupied_names(ctx: ExpCtx<'_>, env: &Env) -> std::collections::HashSet<String> {
+    let mut taken = std::collections::HashSet::new();
+    for value in env.values() { reserve_expr_names(value, &mut taken); }
+    for value in ctx.registry.mut_futures.borrow().values() {
+        reserve_expr_names(value, &mut taken);
+    }
+    for name in ctx.registry.closure_preds.borrow().values() {
+        taken.insert(name.clone());
+    }
+    for (_, (name, _)) in ctx.registry.trait_fn_symbols.borrow().iter() {
+        taken.insert(name.clone());
+    }
+    taken
+}
+
+fn reserve_nonbinder_names(
+    expr: &Exp,
+    bound: &[VarIdent],
+    taken: &mut std::collections::HashSet<String>,
+) {
+    exp_visit_vars(expr, &mut |ident| {
+        if !bound.iter().any(|binder| binder == ident) {
+            taken.insert(ident.0.to_string());
+        }
+    });
+}
+
+fn capture_avoiding_binder_name(
+    base: &str,
+    taken: &mut std::collections::HashSet<String>,
+) -> String {
+    if taken.insert(base.to_owned()) { return base.to_owned(); }
+    for counter in 0u64.. {
+        let candidate = format!("{base}_vrml_{counter}");
+        if taken.insert(candidate.clone()) { return candidate; }
+    }
+    unreachable!("unbounded fresh names exhausted")
+}
+
+#[cfg(test)]
+mod capture_avoiding_binder_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn substituted_outer_variable_is_not_captured() {
+        let mut occupied = HashSet::new();
+        reserve_expr_names(
+            &Expr::binary(BinOp::Lt, Expr::Var("i".into()), Expr::Int("7".into())),
+            &mut occupied,
+        );
+        assert_eq!(capture_avoiding_binder_name("i", &mut occupied), "i_vrml_0");
+    }
+
+    #[test]
+    fn nested_binders_and_triggers_reserve_names() {
+        let e = Expr::Quant(
+            true, vec![Binder::new("i_vrml_0", Ty::Int)],
+            vec![vec![Expr::Var("i_vrml_1".into())]],
+            Box::new(Expr::Var("i".into())),
+        );
+        let mut occupied = HashSet::new();
+        reserve_expr_names(&e, &mut occupied);
+        assert_eq!(capture_avoiding_binder_name("i", &mut occupied), "i_vrml_2");
+    }
+
+    #[test]
+    fn distinct_binders_remain_distinct() {
+        let mut occupied = HashSet::new();
+        assert_eq!(capture_avoiding_binder_name("x", &mut occupied), "x");
+        assert_eq!(capture_avoiding_binder_name("x", &mut occupied), "x_vrml_0");
+    }
+
+    #[test]
+    fn nested_choose_and_lambda_names_are_reserved() {
+        let e = Expr::Lambda(
+            vec![Binder::new("j", Ty::Int)],
+            Box::new(Expr::Choose(
+                Binder::new("k", Ty::Int),
+                vec![vec![Expr::Var("t".into())]],
+                Box::new(Expr::Var("i".into())),
+            )),
+        );
+        let mut occupied = HashSet::new();
+        reserve_expr_names(&e, &mut occupied);
+        for name in ["i", "j", "k", "t"] {
+            assert!(occupied.contains(name));
+        }
+    }
+}
+
 fn lower_exp(ctx: ExpCtx<'_>, env: &Env, exp: &Exp) -> Result<Expr, String> {
     charge_work(ctx.registry, 1)?;
     lower_exp_impl(ctx, env, exp).map_err(|error| annotate_span(error, &exp.span))
@@ -1798,8 +1944,18 @@ fn lower_exp_impl(ctx: ExpCtx<'_>, env: &Env, exp: &Exp) -> Result<Expr, String>
                 let mut extended = env.clone();
                 let mut bound = Vec::new();
                 let mut guards = Vec::new();
+                let bound_ids: Vec<VarIdent> = binders.iter().map(|b| b.name.clone()).collect();
+                let mut taken = binding_occupied_names(ctx, env);
+                reserve_nonbinder_names(body, &bound_ids, &mut taken);
+                for group in trigs.iter() {
+                    for trigger in group.iter() {
+                        reserve_nonbinder_names(trigger, &bound_ids, &mut taken);
+                    }
+                }
                 for binder in binders.iter() {
-                    let base = binder.name.0.to_string();
+                    let base = capture_avoiding_binder_name(
+                        &binder.name.0.to_string(), &mut taken,
+                    );
                     extended.insert(binder.name.clone(), Expr::Var(base.clone()));
                     for fact in type_range_facts(ctx, &binder.a, &Expr::Var(base.clone()))? {
                         guards.push(fact);
@@ -1858,7 +2014,18 @@ fn lower_exp_impl(ctx: ExpCtx<'_>, env: &Env, exp: &Exp) -> Result<Expr, String>
                         "unsupported SST choose at non-scalar binder type {ty:?}"
                     ));
                 }
-                let base = binder.name.0.to_string();
+                let mut taken = binding_occupied_names(ctx, env);
+                let bound_ids = [binder.name.clone()];
+                reserve_nonbinder_names(body, &bound_ids, &mut taken);
+                reserve_nonbinder_names(cond, &bound_ids, &mut taken);
+                for group in trigs.iter() {
+                    for trigger in group.iter() {
+                        reserve_nonbinder_names(trigger, &bound_ids, &mut taken);
+                    }
+                }
+                let base = capture_avoiding_binder_name(
+                    &binder.name.0.to_string(), &mut taken,
+                );
                 charge_env_copy(ctx.registry, env)?;
                 let mut extended = env.clone();
                 extended.insert(binder.name.clone(), Expr::Var(base.clone()));
@@ -1897,8 +2064,13 @@ fn lower_exp_impl(ctx: ExpCtx<'_>, env: &Env, exp: &Exp) -> Result<Expr, String>
                 charge_env_copy(ctx.registry, env)?;
                 let mut extended = env.clone();
                 let mut bound = Vec::new();
+                let bound_ids: Vec<VarIdent> = binders.iter().map(|b| b.name.clone()).collect();
+                let mut taken = binding_occupied_names(ctx, env);
+                reserve_nonbinder_names(body, &bound_ids, &mut taken);
                 for binder in binders.iter() {
-                    let base = binder.name.0.to_string();
+                    let base = capture_avoiding_binder_name(
+                        &binder.name.0.to_string(), &mut taken,
+                    );
                     extended.insert(binder.name.clone(), Expr::Var(base.clone()));
                     bound.push(Binder::new(base, binder_type(ctx, &binder.a)?));
                 }
