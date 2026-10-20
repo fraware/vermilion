@@ -53,6 +53,7 @@ jobs:
       - name: Run Rust lowering tests
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          repository="$PWD"
           source scripts/verus_env.sh
           ( cd crates/vermilion_direct && rustup run "$verus_toolchain" cargo test )
       - name: Verify independent capture cases — per function
