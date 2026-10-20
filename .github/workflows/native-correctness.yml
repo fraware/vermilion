@@ -1,0 +1,87 @@
+name: Vermilion Native Correctness
+
+on:
+  push:
+    branches:
+      - verify/native-acceptance
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    name: Python protocol checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check syntax and classifier regressions
+        run: |
+          python3 -m py_compile scripts/run_differential.py scripts/differential_outcomes.py scripts/differential_soundness.py scripts/check_capture_goals.py
+          python3 -m unittest discover -s tests -p test_differential_outcomes.py -v
+
+  native:
+    name: Rust, Verus and Lean native acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs |
+              sh -s -- -y --profile minimal
+          fi
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build pinned native toolchain
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Run Rust lowering tests
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          source scripts/verus_env.sh
+          ( cd crates/vermilion_direct && rustup run "$verus_toolchain" cargo test )
+      - name: Verify independent capture cases — per function
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          rm -f .vermilion/differential-cache.json docs/reports/generated/differential-m1-results.md
+          python3 scripts/run_differential.py --emit-mode per-function
+          python3 scripts/differential_soundness.py \
+            docs/reports/generated/differential-m1-results.md tests/differential
+          python3 scripts/check_capture_goals.py .
+      - name: Verify independent capture cases — per file
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          rm -f .vermilion/differential-cache.json docs/reports/generated/differential-m1-results.md
+          python3 scripts/run_differential.py --emit-mode per-file
+          python3 scripts/differential_soundness.py \
+            docs/reports/generated/differential-m1-results.md tests/differential
+          python3 scripts/check_capture_goals.py .
+      - name: Run complete native regression suite
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/run_suite.sh
+      - name: Upload generated evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-verification-evidence
+          path: |
+            docs/reports/generated/differential-m1-results.md
+            tests/differential/generated/
+          if-no-files-found: warn
+          retention-days: 14
