@@ -73,12 +73,29 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           ./scripts/build.sh
+          lake build vrml_gen
+          test -x .lake/build/bin/vrml_gen
+          test -x target/debug/vrml_check
+          test -x target/debug/vrml_sync
       - name: Initialize independent Rust projects and run real verification
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           sdk="$PWD"
           tmp="$(mktemp -d /tmp/vermilion-external-XXXXXX)"
           trap 'rm -rf "$tmp"' EXIT
+          evidence="$sdk/.vermilion/ci-external-evidence"
+          mkdir -p "$evidence"
+          trap '
+            for kind in valid invalid; do
+              if [ -d "$tmp/$kind/.vermilion/runs" ]; then
+                cp -r "$tmp/$kind/.vermilion/runs" "$evidence/$kind-runs"
+              fi
+              if [ -d "$tmp/$kind/src/generated" ]; then
+                cp -r "$tmp/$kind/src/generated" "$evidence/$kind-generated"
+              fi
+            done
+            rm -rf "$tmp"
+          ' EXIT
           mkdir -p "$tmp/valid/src" "$tmp/invalid/src"
           cat > "$tmp/valid/src/valid.rs" <<'RUST'
           use verus_builtin::*;
@@ -128,8 +145,11 @@ jobs:
           assert state["verdict"]=="rejected" and state["failed_obligations"]>0
           PY
           echo "External valid contract kernel-checked and false contract rejected."
-      - name: Store exact native external-test logs
+      - name: Preserve native external-project receipts
         if: always()
-        run: |
-          echo "External project fixtures are built in ephemeral /tmp and are not retained."
-          echo "Native GitHub job logs are the evidence for this first end-to-end gate."
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-external-project-evidence
+          path: .vermilion/ci-external-evidence/
+          if-no-files-found: warn
+          retention-days: 14
