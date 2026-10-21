@@ -1,0 +1,136 @@
+name: Capture Regression Causality
+
+on:
+  push:
+    branches:
+      - experiment/capture-causality
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vermilion-capture-causality-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protocol:
+    name: Causality comparator unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run adversarial comparator unit tests
+        run: |
+          python3 -m py_compile scripts/run_differential.py scripts/capture_causality.py
+          python3 -m unittest discover -s tests -p test_capture_causality.py -v
+
+  actual-baseline:
+    needs: protocol
+    name: Original-vs-corrected Rust lowering
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs |
+              sh -s -- -y --profile minimal
+          fi
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore pinned native build cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-\${{ runner.os }}-\${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-\${{ runner.os }}-
+      - name: Build checked implementation
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Verify the corrected six-fixture subset
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          mkdir -p .vermilion/causality
+          git rev-parse HEAD > .vermilion/causality/experiment-commit.txt
+          git hash-object crates/vermilion_direct/src/lower.rs > .vermilion/causality/fixed-lowering-blob.txt
+          rm -f .vermilion/differential-cache.json
+          python3 scripts/run_differential.py --case-prefix c_hygiene_ --emit-mode per-function \
+            > .vermilion/causality/fixed-output.log 2>&1
+          cp docs/reports/generated/differential-m1-results.md .vermilion/causality/fixed-report.md
+          python3 scripts/check_capture_goals.py . > .vermilion/causality/fixed-goal-guard.log
+          tar -czf .vermilion/causality/fixed-generated.tar.gz -C tests/differential generated
+      - name: Reproduce on pinned original lowering, without changing the front end or Lean
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          original=1a56a4f38cbb126b7d73b04207e9c6fda9f179bf
+          path=crates/vermilion_direct/src/lower.rs
+          git show "$original:$path" > "$path"
+          test "$(git hash-object "$path")" = "0b24c5d29c091844c24277926f1182c575380ddb"
+          git hash-object "$path" > .vermilion/causality/baseline-lowering-blob.txt
+          repository="$PWD"
+          source scripts/verus_env.sh
+          ( cd crates/vermilion_direct && rustup run "$verus_toolchain" cargo build --release )
+          rm -f .vermilion/differential-cache.json
+          set +e
+          python3 scripts/run_differential.py --case-prefix c_hygiene_ --emit-mode per-function \
+            > .vermilion/causality/baseline-output.log 2>&1
+          outcome=$?
+          set -e
+          echo "$outcome" > .vermilion/causality/baseline-exit.txt
+          cp docs/reports/generated/differential-m1-results.md .vermilion/causality/baseline-report.md
+          tar -czf .vermilion/causality/baseline-generated.tar.gz -C tests/differential generated
+          if [ "$outcome" -ne 1 ]; then
+            echo "baseline did not exhibit a classified semantic mismatch; see evidence" >&2
+            exit 1
+          fi
+          set +e
+          python3 scripts/check_capture_goals.py . \
+            > .vermilion/causality/baseline-goal-guard.log 2>&1
+          guard_status=$?
+          set -e
+          test "$guard_status" -eq 1
+      - name: Compare both verdict sets and record evidence provenance
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          python3 scripts/capture_causality.py \
+            .vermilion/causality/baseline-report.md \
+            .vermilion/causality/fixed-report.md |
+            tee .vermilion/causality/causality-summary.txt
+          git show HEAD:crates/vermilion_direct/src/lower.rs \
+            > crates/vermilion_direct/src/lower.rs
+          test "$(git hash-object crates/vermilion_direct/src/lower.rs)" = \
+            "$(cat .vermilion/causality/fixed-lowering-blob.txt)"
+          ( cd .vermilion/causality &&
+            sha256sum *.md *.tar.gz *.log *.txt > sha256sums.txt )
+      - name: Preserve both generated-goal sets and source identities
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: actual-capture-causality-evidence
+          path: .vermilion/causality/
+          if-no-files-found: warn
+          retention-days: 14
