@@ -1,0 +1,162 @@
+name: Native SDK Distribution
+
+on:
+  push:
+    branches:
+      - feature/native-sdk-distribution
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vermilion-native-sdk-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-tests:
+    name: Bundle integrity and contract tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Test package builder and the SDK integrity checks
+        run: |
+          python3 -m py_compile scripts/pack_native_sdk.py scripts/vrml_external.py
+          python3 -m unittest discover -s tests -p test_native_sdk.py -v
+          python3 -m unittest discover -s tests -p test_vrml_external.py -v
+          python3 -m unittest discover -s tests -p test_vrml_external_bindings.py -v
+
+  relocatable-native:
+    name: Verify Rust through relocated native bundle
+    needs: package-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned SDK host prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore previously compiled toolchain cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-\${{ runner.os }}-\${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-\${{ runner.os }}-
+      - name: Compile SDK toolchain and VC generator
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+          lake build vrml_gen
+      - name: Assemble and inspect relocated binary bundle
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          source_root="$PWD"
+          echo "$source_root" > "$RUNNER_TEMP/original-source-root"
+          python3 scripts/pack_native_sdk.py \
+            --source "$source_root" --output "$RUNNER_TEMP/vermilion-native-sdk"
+          du -sh "$RUNNER_TEMP/vermilion-native-sdk"
+          python3 scripts/vrml_external.py doctor --sdk "$RUNNER_TEMP/vermilion-native-sdk"
+      - name: Run installed CLI against package in disjoint directories
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          python3 -m pip wheel . --no-build-isolation --no-deps -w "$RUNNER_TEMP/wheels"
+          python3 -m pip install --no-deps --target "$RUNNER_TEMP/installed" \
+            "$RUNNER_TEMP"/wheels/vermilion_external_cli-*.whl
+          export PYTHONPATH="$RUNNER_TEMP/installed"
+          mkdir -p "$RUNNER_TEMP/vrml-positive/src" "$RUNNER_TEMP/vrml-negative/src"
+          cat > "$RUNNER_TEMP/vrml-positive/src/good.rs" <<'RUST'
+          use verus_builtin::*;
+          use verus_builtin_macros::*;
+          verus! {
+          fn increment(x: u32) -> (y: u32)
+              requires x < 100,
+              ensures y == x + 1,
+          {
+              let y = x + 1;
+              assert(y > 0);
+              y
+          }
+          } // verus!
+          RUST
+          cat > "$RUNNER_TEMP/vrml-negative/src/bad.rs" <<'RUST'
+          use verus_builtin::*;
+          use verus_builtin_macros::*;
+          verus! {
+          fn wrong(x: u32) -> (y: u32)
+              requires x < 100,
+              ensures y == x + 2,
+          { x + 1 }
+          } // verus!
+          RUST
+          python3 -m vrml_external init --project-root "$RUNNER_TEMP/vrml-positive" --source src/good.rs
+          python3 -m vrml_external init --project-root "$RUNNER_TEMP/vrml-negative" --source src/bad.rs
+          bundle="$RUNNER_TEMP/vermilion-native-sdk"
+          python3 -m vrml_external doctor --sdk "$bundle"
+          python3 -m vrml_external verify --project-root "$RUNNER_TEMP/vrml-positive" --sdk "$bundle"
+          set +e
+          python3 -m vrml_external verify --project-root "$RUNNER_TEMP/vrml-negative" --sdk "$bundle"
+          negative_status=$?
+          set -e
+          test "$negative_status" -eq 1
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])
+          good=json.loads((root/"vrml-positive/.vermilion/runs/good/verdict.json").read_text())
+          bad=json.loads((root/"vrml-negative/.vermilion/runs/bad/verdict.json").read_text())
+          assert good["verdict"]=="verified" and good["proof_twins"]
+          assert bad["verdict"]=="rejected" and bad["failed_obligations"]>0
+          checkout=(root/"original-source-root").read_text().strip()
+          for project,stem in (("vrml-positive","good"),("vrml-negative","bad")):
+            lean_env=(root/project/".vermilion/runs"/stem/"lean-path.stdout").read_text()
+            assert checkout not in lean_env, "external SDK still depends on source checkout"
+          print("Relocated native SDK accepted good, rejected bad, without original Lean paths")
+          PY
+      - name: Preserve bundle manifest and separate native receipts
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-evidence"
+          if [ -f "$RUNNER_TEMP/vermilion-native-sdk/.vermilion/native-sdk.json" ]; then
+            cp "$RUNNER_TEMP/vermilion-native-sdk/.vermilion/native-sdk.json" \
+              "$RUNNER_TEMP/native-evidence/"
+          fi
+          for case in vrml-positive vrml-negative; do
+            if [ -d "$RUNNER_TEMP/$case/.vermilion/runs" ]; then
+              cp -r "$RUNNER_TEMP/$case/.vermilion/runs" "$RUNNER_TEMP/native-evidence/$case"
+            fi
+            if [ -d "$RUNNER_TEMP/$case/src/generated" ]; then
+              cp -r "$RUNNER_TEMP/$case/src/generated" "$RUNNER_TEMP/native-evidence/$case-generated"
+            fi
+          done
+          ( cd "$RUNNER_TEMP/native-evidence" &&
+            find . -type f -print0 | sort -z | xargs -0 -r sha256sum > sha256sums.txt )
+      - name: Publish reproducible native receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: relocated-native-sdk-evidence
+          path: \${{ runner.temp }}/native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
