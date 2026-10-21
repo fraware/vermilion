@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - verify/native-acceptance
+      - main
   workflow_dispatch:
     inputs:
       run_full_suite:
@@ -106,6 +107,9 @@ jobs:
           python3 scripts/differential_soundness.py \
             docs/reports/generated/differential-m1-results.md tests/differential
           python3 scripts/check_capture_goals.py .
+          mkdir -p .vermilion/ci-evidence
+          cp docs/reports/generated/differential-m1-results.md .vermilion/ci-evidence/per-function-report.md
+          tar -czf .vermilion/ci-evidence/per-function-generated.tar.gz -C tests/differential generated
       - name: Verify independent capture cases — per file
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
@@ -114,6 +118,10 @@ jobs:
           python3 scripts/differential_soundness.py \
             docs/reports/generated/differential-m1-results.md tests/differential
           python3 scripts/check_capture_goals.py .
+          mkdir -p .vermilion/ci-evidence
+          cp docs/reports/generated/differential-m1-results.md .vermilion/ci-evidence/per-file-report.md
+          tar -czf .vermilion/ci-evidence/per-file-generated.tar.gz -C tests/differential generated
+          ( cd .vermilion/ci-evidence && sha256sum *.md *.tar.gz > sha256sums.txt )
       - name: Run upstream smoke and contract suite
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
@@ -131,5 +139,6 @@ jobs:
           path: |
             docs/reports/generated/differential-m1-results.md
             tests/differential/generated/
+            .vermilion/ci-evidence/
           if-no-files-found: warn
           retention-days: 14
