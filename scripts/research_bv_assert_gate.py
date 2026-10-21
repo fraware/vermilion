@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Evaluate research-only nested bit-vector controls without an aggregate parity threshold.
+"""Evaluate research-only nested and direct bit-vector controls without an aggregate parity threshold.
 
-A PASS refutes false acceptance for the specified three cases and versions only.
+A PASS refutes false acceptance for the specified five cases and versions only.
 A FAIL with a Verus reject / Lean accept is an empirical discrepancy to investigate,
 not yet proof that every translation of the construct is unsound.
 """
@@ -14,6 +14,8 @@ EXPECTED = {
     "c_research_bv_01_nested_false": "fail",
     "c_research_bv_02_valid": "pass",
     "c_research_bv_03_false_outer": "fail",
+    "c_research_bv_04_direct_false": "fail",
+    "c_research_bv_05_direct_valid": "pass",
 }
 HEADER = "| Case | Verus | Lean | Verdict | Failure lines |"
 
@@ -45,7 +47,7 @@ def evaluate(report: str) -> tuple[int, str]:
             return 2, f"{name}: pinned Verus disagreed with fixture expectation: {verus}"
         if lean != expected or verdict != "ok":
             return 1, f"{name}: Verus={verus}, Lean={lean}, classification={verdict}"
-    return 0, "All three research fixtures show expected, matching native Verus/Lean verdicts"
+    return 0, "All five research fixtures show expected, matching native Verus/Lean verdicts"
 
 def main() -> int:
     parser = argparse.ArgumentParser()
