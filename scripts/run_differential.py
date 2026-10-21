@@ -91,14 +91,22 @@ def lean_generator_stale():
 
 def main() -> int:
     emit_mode = "per-function"
+    case_prefix = None
     arguments = sys.argv[1:]
     while arguments:
         argument = arguments.pop(0)
         if argument == "--emit-mode" and arguments:
             emit_mode = arguments.pop(0)
+        elif argument == "--case-prefix" and arguments:
+            case_prefix = arguments.pop(0)
+            if (not case_prefix or "/" in case_prefix or "\\" in case_prefix
+                    or case_prefix in (".", "..")):
+                print("invalid --case-prefix value", file=sys.stderr)
+                return 2
         else:
             print(f"unknown argument {argument} "
-                  "(usage: run_differential.py [--emit-mode per-file|per-function])")
+                  "(usage: run_differential.py [--emit-mode per-file|per-function]"
+                  " [--case-prefix STEM_PREFIX])")
             return 2
     if emit_mode not in ("per-file", "per-function"):
         print(f"unknown emission mode {emit_mode}")
@@ -201,7 +209,11 @@ def main() -> int:
         return not imports_specs or (generated_root / "Specs.lean").is_file()
 
     rows, verdict_hits, span_hits, span_total = [], 0, 0, 0
-    cases = sorted(CASES.glob("*.rs"))
+    cases = sorted(case for case in CASES.glob("*.rs")
+                   if case_prefix is None or case.stem.startswith(case_prefix))
+    if not cases:
+        print(f"no differential cases match prefix {case_prefix!r}", file=sys.stderr)
+        return 2
     progress = Progress(len(cases))
 
     def measure(case, rel, source):
@@ -346,7 +358,8 @@ def main() -> int:
     # own full run, over every case with timings (cold measurements).
     ratios = sorted(
         entry["vermilion_seconds"] / entry["verus_seconds"]
-        for entry in cache["cases"].values()
+        for case in cases
+        for entry in [cache["cases"].get(case.stem, {})]
         if entry.get("verus_seconds") and entry.get("vermilion_seconds"))
     if ratios:
         median = ratios[len(ratios) // 2]
