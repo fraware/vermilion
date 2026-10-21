@@ -1,0 +1,133 @@
+name: Dalek BV SST-to-Lean provenance (research)
+
+on:
+  push:
+    branches:
+      - research/dalek-bv-sst-provenance
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dalek-bv-provenance-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-source-provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate provenance analyzer
+        run: |
+          python3 -m py_compile scripts/audit_dalek_bv_provenance.py
+          python3 scripts/audit_dalek_bv_provenance.py --help
+      - name: Install pinned Verus and Lean host prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | \
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore pinned native toolchain cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-\${{ runner.os }}-\${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-\${{ runner.os }}-
+      - name: Build pinned Rust adapter and Lean generator
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Capture pinned dalek source, VIR, SST, IR, and generated Lean
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          mkdir -p .vermilion/dalek-provenance
+          ./case-studies/dalek-lite/fetch_upstream.sh
+          ./scripts/setup_verus.sh
+          repository="$PWD"
+          source scripts/verus_env.sh
+          rustup run "$verus_toolchain" rustc --edition=2021 \
+            --crate-name subtle --crate-type rlib \
+            case-studies/dalek-lite/subtle_stub.rs \
+            -o .vermilion/dalek-provenance/libsubtle_stub.rlib
+          VERUS_VIR_EXPORT="$repository/.vermilion/dalek-provenance/dalek-vir.bin" \
+            "$verus" case-studies/dalek-lite/layer_a.rs \
+            --crate-type=lib \
+            --extern "subtle=$repository/.vermilion/dalek-provenance/libsubtle_stub.rlib" \
+            --no-verify > .vermilion/dalek-provenance/frontend.stdout \
+                        2> .vermilion/dalek-provenance/frontend.stderr
+          VERMILION_BV_PROVENANCE=1 \
+            ./crates/vermilion_direct/target/release/vermilion_direct \
+            .vermilion/dalek-provenance/dalek-vir.bin \
+            --out .vermilion/dalek-provenance/dalek-ir.sexp \
+            > .vermilion/dalek-provenance/lower.stdout \
+            2> .vermilion/dalek-provenance/lower.stderr
+          source scripts/lean_env.sh
+          vrml_lake_build_if_stale vrml_gen Vermilion
+          ./.lake/build/bin/vrml_gen --mode per-function \
+            --generated-root case-studies/dalek-lite/generated \
+            .vermilion/dalek-provenance/dalek-ir.sexp \
+            > .vermilion/dalek-provenance/generator.stdout \
+            2> .vermilion/dalek-provenance/generator.stderr
+          python3 scripts/audit_dalek_bv_provenance.py \
+            --repo "$repository" \
+            --generated case-studies/dalek-lite/generated \
+            --trace .vermilion/dalek-provenance/lower.stderr \
+            --output .vermilion/dalek-provenance/provenance.json
+          git -C case-studies/dalek-lite/upstream rev-parse HEAD \
+            > .vermilion/dalek-provenance/upstream-pin.txt
+          test "$(cat .vermilion/dalek-provenance/upstream-pin.txt)" = \
+            de9ebf01599fedbbced28b938e2c36c538fe4ae5
+          (cd .vermilion/dalek-provenance &&
+            sha256sum dalek-vir.bin dalek-ir.sexp provenance.json > SHA256SUMS)
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import shutil
+          out=pathlib.Path(".vermilion/dalek-provenance")
+          observations=json.loads((out/"provenance.json").read_text())["observations"]
+          copied=set()
+          target=out/"selected-lean"
+          target.mkdir(exist_ok=True)
+          for item in observations:
+              source=pathlib.Path(item["generated_lean"]["lean_file"])
+              if source not in copied:
+                  shutil.copy2(source,target/source.name)
+                  copied.add(source)
+          print(f"Preserved {len(copied)} generated target Lean modules")
+          PY
+      - name: Preserve provenance (not a verification result)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-bv-source-sst-ir-lean-provenance
+          path: |
+            .vermilion/dalek-provenance/provenance.json
+            .vermilion/dalek-provenance/SHA256SUMS
+            .vermilion/dalek-provenance/lower.stderr
+            .vermilion/dalek-provenance/frontend.stderr
+            .vermilion/dalek-provenance/generator.stderr
+            .vermilion/dalek-provenance/upstream-pin.txt
+            .vermilion/dalek-provenance/selected-lean/
+          if-no-files-found: warn
+          retention-days: 14
