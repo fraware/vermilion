@@ -32,3 +32,104 @@ jobs:
         run: |
           rustup toolchain install 1.96.0 --profile minimal
           RUSTUP_TOOLCHAIN=1.96.0 cargo test -p vermilion_backend --bin vrml_check
+
+  native-external:
+    name: Verify valid and invalid Rust from independent directories
+    needs: [project-contract, native-checker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore native SDK cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-\${{ runner.os }}-\${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-\${{ runner.os }}-
+      - name: Build pinned native SDK with external plugin support
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Initialize independent Rust projects and run real verification
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          sdk="$PWD"
+          tmp="$(mktemp -d /tmp/vermilion-external-XXXXXX)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/valid/src" "$tmp/invalid/src"
+          cat > "$tmp/valid/src/valid.rs" <<'RUST'
+          use verus_builtin::*;
+          use verus_builtin_macros::*;
+          verus! {
+          fn increment(x: u32) -> (y: u32)
+              requires x < 100,
+              ensures y == x + 1,
+          {
+              let y = x + 1;
+              assert(y > 0);
+              y
+          }
+          } // verus!
+          RUST
+          cat > "$tmp/invalid/src/invalid.rs" <<'RUST'
+          use verus_builtin::*;
+          use verus_builtin_macros::*;
+          verus! {
+          fn increment_wrong(x: u32) -> (y: u32)
+              requires x < 100,
+              ensures y == x + 2,
+          {
+              x + 1
+          }
+          } // verus!
+          RUST
+          python3 scripts/vrml_external.py init --project-root "$tmp/valid" \
+            --source src/valid.rs
+          python3 scripts/vrml_external.py init --project-root "$tmp/invalid" \
+            --source src/invalid.rs
+          python3 scripts/vrml_external_verify.py --project-root "$tmp/valid" --sdk "$sdk"
+          python3 - "$tmp/valid/.vermilion/runs/valid/verdict.json" <<'PY'
+          import json,sys
+          state=json.load(open(sys.argv[1]))
+          assert state["verdict"]=="verified" and state["obligations"]>0
+          assert state["proof_twins"]
+          PY
+          set +e
+          python3 scripts/vrml_external_verify.py --project-root "$tmp/invalid" --sdk "$sdk"
+          rejected=$?
+          set -e
+          test "$rejected" -eq 1
+          python3 - "$tmp/invalid/.vermilion/runs/invalid/verdict.json" <<'PY'
+          import json,sys
+          state=json.load(open(sys.argv[1]))
+          assert state["verdict"]=="rejected" and state["failed_obligations"]>0
+          PY
+          echo "External valid contract kernel-checked and false contract rejected."
+      - name: Store exact native external-test logs
+        if: always()
+        run: |
+          echo "External project fixtures are built in ephemeral /tmp and are not retained."
+          echo "Native GitHub job logs are the evidence for this first end-to-end gate."
