@@ -3,7 +3,7 @@ name: Native SDK Distribution
 on:
   push:
     branches:
-      - feature/native-sdk-minimal
+      - feature/native-sdk-cleanhost
   workflow_dispatch:
 
 permissions:
@@ -135,6 +135,21 @@ jobs:
             assert checkout not in lean_env, "external SDK still depends on source checkout"
           print("Relocated native SDK accepted good, rejected bad, without original Lean paths")
           PY
+      - name: Archive relocatable native SDK and installed client wheel
+        run: |
+          mkdir -p "$RUNNER_TEMP/sdk-release"
+          tar -I 'zstd -T0 -3' -cf "$RUNNER_TEMP/sdk-release/vermilion-native-sdk.tar.zst" \
+            -C "$RUNNER_TEMP" vermilion-native-sdk
+          cp "$RUNNER_TEMP"/wheels/vermilion_external_cli-*.whl "$RUNNER_TEMP/sdk-release/"
+          ( cd "$RUNNER_TEMP/sdk-release" && sha256sum *.tar.zst *.whl > SHA256SUMS )
+          du -sh "$RUNNER_TEMP/sdk-release/"
+      - name: Upload distributable native SDK for fresh-runner verification
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-x86_64-native-sdk-alpha
+          path: ${{ runner.temp }}/sdk-release/
+          if-no-files-found: error
+          retention-days: 14
       - name: Preserve bundle manifest and separate native receipts
         if: always()
         run: |
@@ -159,5 +174,115 @@ jobs:
         with:
           name: relocated-native-sdk-evidence
           path: ${{ runner.temp }}/native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  clean-host:
+    name: Install SDK artifact on clean Ubuntu runner
+    needs: relocatable-native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Download only the previously built binary SDK and client wheel
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: linux-x86_64-native-sdk-alpha
+          path: ${{ runner.temp }}/download
+      - name: Install runtime system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libc++1 libc++abi1 zstd curl git libgmp10
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs |
+              sh -s -- -y --profile minimal
+          fi
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Validate SHA-256 archive then provision pinned host toolchains
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          cd "$RUNNER_TEMP/download"
+          sha256sum --check SHA256SUMS
+          tar -I zstd -xf vermilion-native-sdk.tar.zst -C "$RUNNER_TEMP"
+          sdk="$RUNNER_TEMP/vermilion-native-sdk"
+          test -f "$sdk/.vermilion/native-sdk.json"
+          lean_pin="$(cat "$sdk/lean-toolchain")"
+          rust_pin="$(sed -n 's/^channel = "\([^"]*\)"$/\1/p' "$sdk/.verus-checkout/rust-toolchain.toml")"
+          test -n "$lean_pin" && test -n "$rust_pin"
+          elan toolchain install "$lean_pin"
+          rustup toolchain install "$rust_pin" --profile minimal
+          python3 -m pip install --no-deps --target "$RUNNER_TEMP/installed" \
+            "$RUNNER_TEMP"/download/vermilion_external_cli-*.whl
+          test ! -e "$RUNNER_TEMP/vermilion-native-sdk/.git"
+      - name: Verify positive and negative Rust contracts without development checkout
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          export PYTHONPATH="$RUNNER_TEMP/installed"
+          sdk="$RUNNER_TEMP/vermilion-native-sdk"
+          mkdir -p "$RUNNER_TEMP/positive/src" "$RUNNER_TEMP/negative/src"
+          cat > "$RUNNER_TEMP/positive/src/checked.rs" <<'RUST'
+          use verus_builtin::*;
+          use verus_builtin_macros::*;
+          verus! {
+          fn f(x: u32) -> (r: u32)
+              requires x < 100,
+              ensures r == x + 1,
+          { x + 1 }
+          } // verus!
+          RUST
+          cat > "$RUNNER_TEMP/negative/src/rejected.rs" <<'RUST'
+          use verus_builtin::*;
+          use verus_builtin_macros::*;
+          verus! {
+          fn f(x: u32) -> (r: u32)
+              requires x < 100,
+              ensures r == x + 2,
+          { x + 1 }
+          } // verus!
+          RUST
+          python3 -m vrml_external doctor --sdk "$sdk"
+          python3 -m vrml_external init --project-root "$RUNNER_TEMP/positive" --source src/checked.rs
+          python3 -m vrml_external init --project-root "$RUNNER_TEMP/negative" --source src/rejected.rs
+          python3 -m vrml_external verify --project-root "$RUNNER_TEMP/positive" --sdk "$sdk"
+          set +e
+          python3 -m vrml_external verify --project-root "$RUNNER_TEMP/negative" --sdk "$sdk"
+          negative=$?
+          set -e
+          test "$negative" -eq 1
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          base=Path(os.environ["RUNNER_TEMP"])
+          a=json.loads((base/"positive/.vermilion/runs/checked/verdict.json").read_text())
+          b=json.loads((base/"negative/.vermilion/runs/rejected/verdict.json").read_text())
+          assert a["verdict"]=="verified" and a["obligations"]>0 and a["proof_twins"]
+          assert b["verdict"]=="rejected" and b["failed_obligations"]>0
+          for directory,stem in (("positive","checked"),("negative","rejected")):
+            paths=(base/directory/".vermilion/runs"/stem/"lean-path.stdout").read_text()
+            assert str(base/"vermilion-native-sdk") in paths
+            assert "/home/runner/work/vermilion/vermilion" not in paths
+          print("PASS: artifact-only clean Ubuntu installation and native verification")
+          PY
+      - name: Archive clean-host evidence
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/clean-host-evidence"
+          for kind in positive negative; do
+            if [ -d "$RUNNER_TEMP/$kind/.vermilion/runs" ]; then
+              cp -r "$RUNNER_TEMP/$kind/.vermilion/runs" \
+                "$RUNNER_TEMP/clean-host-evidence/$kind-runs"
+            fi
+          done
+      - name: Upload clean-host verification receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: clean-host-native-evidence
+          path: ${{ runner.temp }}/clean-host-evidence/
           if-no-files-found: warn
           retention-days: 14
