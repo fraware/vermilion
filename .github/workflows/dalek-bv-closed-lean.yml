@@ -1,0 +1,76 @@
+name: Dalek BV closed Lean certificates (research)
+
+on:
+  push:
+    branches:
+      - research/dalek-bv-closed-lean-proofs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dalek-bv-closed-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  four-closed-formulas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Host Lean dependency prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | \
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore pinned compiled Lean environment
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-\${{ runner.os }}-\${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-\${{ runner.os }}-
+      - name: Build and check exact pinned imports
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Kernel-check four closed unsimplified formulas (no admits)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          mkdir -p .vermilion/dalek-bv-proof-evidence
+          # The Lean source is committed; the checker must exit zero.
+          timeout 420s lake env lean research/dalek_bv_closed.lean \
+            > .vermilion/dalek-bv-proof-evidence/lean.stdout \
+            2> .vermilion/dalek-bv-proof-evidence/lean.stderr
+          test ! -s .vermilion/dalek-bv-proof-evidence/lean.stderr
+          sha256sum research/dalek_bv_closed.lean \
+            > .vermilion/dalek-bv-proof-evidence/SHA256SUMS
+          echo "LEAN_KERNEL_ELABORATION_COMPLETED: four closed formulas"
+      - name: Retain exact Lean certificate receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-bv-four-lean-certificates
+          path: .vermilion/dalek-bv-proof-evidence/
+          if-no-files-found: warn
+          retention-days: 14
