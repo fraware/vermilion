@@ -26,6 +26,15 @@ jobs:
           python3 -m unittest discover -s tests -p test_vrml_external.py -v
           python3 -m py_compile scripts/vrml_external_verify.py scripts/vrml_external_bindings.py
           python3 -m unittest discover -s tests -p test_vrml_external_bindings.py -v
+      - name: Build and exercise the installed client
+        run: |
+          python3 -m pip wheel . --no-build-isolation --no-deps -w /tmp/vrml-wheel
+          python3 -m pip install --no-deps --target /tmp/vrml-installed /tmp/vrml-wheel/vermilion_external_cli-*.whl
+          PYTHONPATH=/tmp/vrml-installed python3 -m vrml_external --help
+          mkdir -p /tmp/vrml-cli-smoke/src
+          printf 'fn sample() {}\n' > /tmp/vrml-cli-smoke/src/sample.rs
+          ( cd /tmp && PYTHONPATH=/tmp/vrml-installed python3 -m vrml_external init --project-root /tmp/vrml-cli-smoke --source src/sample.rs )
+          test -f /tmp/vrml-cli-smoke/.vermilion/project.json
 
   native-checker:
     name: Compile external plugin-path support
@@ -129,11 +138,15 @@ jobs:
           }
           } // verus!
           RUST
-          python3 scripts/vrml_external.py init --project-root "$tmp/valid" \
+          # Install the client wheel separately from the native SDK.
+          python3 -m pip wheel . --no-build-isolation --no-deps -w "$tmp/wheels"
+          python3 -m pip install --no-deps --target "$tmp/python"             "$tmp/wheels"/vermilion_external_cli-*.whl
+          export PYTHONPATH="$tmp/python"
+          python3 -m vrml_external init --project-root "$tmp/valid" \
             --source src/valid.rs
-          python3 scripts/vrml_external.py init --project-root "$tmp/invalid" \
+          python3 -m vrml_external init --project-root "$tmp/invalid" \
             --source src/invalid.rs
-          python3 scripts/vrml_external_verify.py --project-root "$tmp/valid" --sdk "$sdk"
+          python3 -m vrml_external verify --project-root "$tmp/valid" --sdk "$sdk"
           python3 - "$tmp/valid/.vermilion/runs/valid/verdict.json" <<'PY'
           import json,sys
           state=json.load(open(sys.argv[1]))
@@ -141,7 +154,7 @@ jobs:
           assert state["proof_twins"]
           PY
           set +e
-          python3 scripts/vrml_external_verify.py --project-root "$tmp/invalid" --sdk "$sdk"
+          python3 -m vrml_external verify --project-root "$tmp/invalid" --sdk "$sdk"
           rejected=$?
           set -e
           test "$rejected" -eq 1

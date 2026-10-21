@@ -158,6 +158,9 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--source", dest="sources", action="append", required=True)
     init.add_argument("--mode", choices=("per-function", "per-file"),
                       default="per-function")
+    verify_cmd = cmd.add_parser("verify", help="verify a configured external Rust source using native Lean")
+    verify_cmd.add_argument("--project-root", type=Path, required=True)
+    verify_cmd.add_argument("--sdk", type=Path, required=True)
     doctor = cmd.add_parser("doctor", help="inspect a prebuilt Vermilion SDK")
     doctor.add_argument("--sdk", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -166,6 +169,9 @@ def main(argv: list[str] | None = None) -> int:
             path = init_project(args.project_root, args.sources, args.mode)
             print(f"initialized {path}")
             return 0
+        if args.command == "verify":
+            from vrml_external_verify import verify
+            return verify(args.project_root, args.sdk)
         result = check_sdk(args.sdk)
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result["ready_for_native_attempt"] else 2

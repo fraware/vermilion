@@ -169,6 +169,16 @@ def verify(project: Path, sdk: Path, source_override: str | None = None) -> int:
                 msg.get("$message_type") == "diagnostic"
             ):
                 errors.append(msg)
+        for diagnostic in errors:
+            code = (diagnostic.get("code") or {}).get("code")
+            spans = diagnostic.get("spans") or []
+            if (code not in ("vermilion::obligation_failed",
+                             "vermilion::evidence_unresolved") or
+                not any(isinstance(span, dict) and span.get("is_primary")
+                        and span.get("file_name") == relative
+                        and isinstance(span.get("line_start"), int)
+                        and span["line_start"] > 0 for span in spans)):
+                raise ContractError("unattributed/non-proof checker error is infrastructure")
         if not errors:
             raise ContractError("Lean check failed without source-mapped proof diagnostics")
         verdict["verdict"] = "rejected"
