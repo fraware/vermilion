@@ -54,6 +54,13 @@ struct LeanMessage {
 }
 
 fn find_cvc5_plugin() -> Option<PathBuf> {
+    // An external project executes from outside Vermilion's source checkout.
+    // Honor its explicitly pinned plugin path without falling back to a
+    // different plugin when the requested file is missing.
+    if let Some(explicit) = std::env::var_os("VRML_CVC5_PLUGIN") {
+        let plugin = PathBuf::from(explicit);
+        return plugin.is_file().then_some(plugin);
+    }
     let lib_dir = Path::new(".lake/packages/cvc5/.lake/build/lib");
     ["libcvc5_cvc5.dylib", "libcvc5_cvc5.so", "cvc5_cvc5.dll"]
         .into_iter()
