@@ -19,7 +19,7 @@ import sys
 
 from vrml_external import BINARIES, LEAN_LIBRARY, PLUGIN_CANDIDATES, ContractError
 
-FORMAT = "vermilion-native-sdk-v1"
+FORMAT = "vermilion-native-sdk-v2"
 CHECKED_FILES = ("lean-toolchain", "lakefile.lean", "lake-manifest.json",
                  ".verus-checkout/rust-toolchain.toml", LEAN_LIBRARY,
                  *tuple(BINARIES.values()))
@@ -33,7 +33,7 @@ def sha(path: Path) -> str:
     return hash_value.hexdigest()
 
 
-def _copy(src: Path, dest: Path) -> None:
+def _copy(src: Path, dest: Path, *, exclude_build: bool = False) -> None:
     if not src.exists():
         raise ContractError(f"required build artifact is missing: {src}")
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -42,7 +42,11 @@ def _copy(src: Path, dest: Path) -> None:
             raise ContractError(f"destination collision: {dest}")
         # Follow any symlink to copy its actual bytes. The packaged bundle
         # must not depend on source-checkout symlinks at verification time.
-        shutil.copytree(src, dest, symlinks=False)
+        ignore = None
+        if exclude_build:
+            def ignore(parent, children):
+                return set(children) & {"build", "incremental", ".fingerprint"}
+        shutil.copytree(src, dest, symlinks=False, ignore=ignore)
     else:
         shutil.copy2(src, dest, follow_symlinks=True)
 
@@ -94,18 +98,33 @@ def build(source: Path, output: Path) -> dict:
             raise ContractError(f"build artifact absent: {name}")
     output.mkdir(parents=True, exist_ok=False)
     try:
-        # Lake config and sources are used to reconstruct LEAN_PATH in a
-        # relocated runtime; precompiled oleans avoid dependency rebuilding.
+        # Retain precompiled Lean modules only. The installed verifier
+        # reads explicit LEAN_PATH entries from this manifest and therefore
+        # needs neither package source repositories nor a Lake workspace.
         for name in ("lean-toolchain", "lakefile.lean", "lake-manifest.json"):
             _copy(source / name, output / name)
-        for name in ("lean", ".lake/packages", ".lake/build"):
-            _copy(source / name, output / name)
+        lean_paths = [".lake/build/lib/lean"]
+        _copy(source / ".lake/build/lib/lean", output / ".lake/build/lib/lean")
+        _copy(source / ".lake/build/bin/vrml_gen",
+              output / ".lake/build/bin/vrml_gen")
+        packages = source / ".lake/packages"
+        if not packages.is_dir():
+            raise ContractError("Lean package cache is missing")
+        for pkg in sorted(packages.iterdir()):
+            lib = pkg / ".lake/build/lib/lean"
+            if lib.is_dir():
+                relative = f".lake/packages/{pkg.name}/.lake/build/lib/lean"
+                _copy(lib, output / relative)
+                lean_paths.append(relative)
+        # Native SMT plugin is required separately from its Lean oleans.
+        _copy(source / checks[-1], output / checks[-1])
         # The checkout source compiler is unnecessary for executing the
         # pinned rust_verify binary. Preserve runtime binaries, deps and Z3.
         _copy(checkout / "rust-toolchain.toml",
               output / ".verus-checkout/rust-toolchain.toml")
         _copy(checkout / "source/target-verus/release",
-              output / ".verus-checkout/source/target-verus/release")
+              output / ".verus-checkout/source/target-verus/release",
+              exclude_build=True)
         _copy(checkout / "source/z3", output / ".verus-checkout/source/z3")
         for name in BINARIES.values():
             if name.startswith(".verus-checkout/") or name.startswith(".lake/"):
@@ -123,6 +142,7 @@ def build(source: Path, output: Path) -> dict:
             "platform": sys.platform,
             "architecture": os.uname().machine if hasattr(os, "uname") else "unknown",
             "plugin": plugin,
+            "lean_paths": lean_paths,
             "files": files,
             "toolchain_policy": "matching host must install pinned rustup and elan toolchains",
             "proof_scope": "runtime packaging; no verification verdict",

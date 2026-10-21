@@ -3,7 +3,7 @@ name: Native SDK Distribution
 on:
   push:
     branches:
-      - feature/native-sdk-distribution
+      - feature/native-sdk-minimal
   workflow_dispatch:
 
 permissions:

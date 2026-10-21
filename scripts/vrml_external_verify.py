@@ -117,13 +117,21 @@ def verify(project: Path, sdk: Path, source_override: str | None = None) -> int:
     env["VERUS_Z3_PATH"] = str(verus_source / "z3")
     env["VRML_CVC5_PLUGIN"] = str(plugin)
     # Use Lean libraries built with the pinned SDK, not with the user's project.
-    lean_path = execute(["lake", "env", "printenv", "LEAN_PATH"], sdk, env,
-                        "lean-path", logdir, 120)
-    if lean_path.returncode != 0 or not lean_path.stdout.strip():
-        raise ContractError("could not obtain pinned SDK Lean library path")
-    entries = [p for p in lean_path.stdout.strip().split(os.pathsep) if p]
-    env["LEAN_PATH"] = os.pathsep.join([str(project)] +
-        [str((sdk / p).resolve()) for p in entries])
+    if doctor["native_bundle"]:
+        bundle_meta = json.loads((sdk / ".vermilion/native-sdk.json").read_text())
+        entries = bundle_meta["lean_paths"]
+        env["LEAN_PATH"] = os.pathsep.join(
+            [str(project)] + [str((sdk / p).resolve(strict=True)) for p in entries]
+        )
+        (logdir / "lean-path.stdout").write_text(env["LEAN_PATH"] + "\n", encoding="utf-8")
+    else:
+        lean_path = execute(["lake", "env", "printenv", "LEAN_PATH"], sdk, env,
+                            "lean-path", logdir, 120)
+        if lean_path.returncode != 0 or not lean_path.stdout.strip():
+            raise ContractError("could not obtain pinned SDK Lean library path")
+        entries = [p for p in lean_path.stdout.strip().split(os.pathsep) if p]
+        env["LEAN_PATH"] = os.pathsep.join([str(project)] +
+            [str((sdk / p).resolve()) for p in entries])
     # Fresh run identity. Old generator, proof and editor artifacts cannot
     # silently replace the obligations for newly updated Rust source.
     vir = state / ("external-" + source.stem + "-vir.bin")

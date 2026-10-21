@@ -53,13 +53,15 @@ class BundleTests(unittest.TestCase):
 
     def test_copies_runtime_and_marks_source(self):
         manifest = self.assemble()
-        self.assertEqual(manifest["format"], "vermilion-native-sdk-v1")
+        self.assertEqual(manifest["format"], "vermilion-native-sdk-v2")
         self.assertEqual(manifest["source_commit"], self.source_sha)
         self.assertTrue((self.output / LEAN_LIBRARY).is_file())
         self.assertFalse((self.output / "crates/vermilion_backend/src/bin/vrml_check.rs").exists())
         present, errors = native_sdk_manifest(self.output)
         self.assertTrue(present)
         self.assertEqual(errors, [])
+        self.assertEqual(manifest["lean_paths"], [".lake/build/lib/lean"])
+        self.assertFalse((self.output / ".lake/packages/cvc5/.git").exists())
 
     def test_binary_tamper_fails(self):
         self.assemble()

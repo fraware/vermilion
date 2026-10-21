@@ -111,7 +111,7 @@ def init_project(root: Path, source_paths: list[str], mode: str) -> Path:
     return path
 
 
-NATIVE_FORMAT = "vermilion-native-sdk-v1"
+NATIVE_FORMAT = "vermilion-native-sdk-v2"
 
 
 def _sha256(path: Path) -> str:
@@ -146,6 +146,15 @@ def native_sdk_manifest(sdk: Path) -> tuple[bool, list[str]]:
         plugin = data.get("plugin")
         if plugin not in PLUGIN_CANDIDATES or plugin not in data["files"]:
             raise ContractError("native SDK plugin identity is invalid")
+        lean_paths = data.get("lean_paths")
+        if not isinstance(lean_paths, list) or not lean_paths or len(set(lean_paths)) != len(lean_paths):
+            raise ContractError("invalid or duplicate native Lean search paths")
+        for entry in lean_paths:
+            if not isinstance(entry, str) or not entry or Path(entry).is_absolute():
+                raise ContractError("native Lean search path is not relative")
+            directory = (sdk / entry).resolve()
+            if not directory.is_relative_to(sdk) or not directory.is_dir():
+                raise ContractError(f"native Lean search path is missing or escapes SDK: {entry}")
         for relative, digest in data["files"].items():
             if (not isinstance(relative, str) or not isinstance(digest, str)
                     or not re.fullmatch(r"[0-9a-f]{64}", digest)):
@@ -192,7 +201,7 @@ def check_sdk(sdk: Path) -> dict:
             not in checker_src.read_text(encoding="utf-8")
         ):
             missing.append("checker external native-plugin path support")
-    for executable in ("lean", "lake", "rustup"):
+    for executable in (("lean", "rustup") if is_bundle else ("lean", "lake", "rustup")):
         if shutil.which(executable) is None:
             missing.append(f"PATH tool: {executable}")
     return {
