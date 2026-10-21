@@ -100,7 +100,11 @@ pub fn function_ssts(export: &Export) -> Result<MiddleOutput, String> {
         false,
         false,
         false,
-        false,
+        // Research mode: retain the UNSIMPLIFIED bit-vector queries from
+        // the pinned pre-poly SST. The default stays identical to upstream.
+        // Verus's elaborate_function_bv normally interprets/evaluates the
+        // query's requires and ensures before Vermilion sees the SST.
+        std::env::var_os("VERMILION_NO_BV_SIMPLIFY").is_some(),
         false,
     )
     .map_err(vir_error)?;
