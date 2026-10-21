@@ -20,3 +20,15 @@ jobs:
         run: |
           python3 -m py_compile scripts/vrml_external.py
           python3 -m unittest discover -s tests -p test_vrml_external.py -v
+
+  native-checker:
+    name: Compile external plugin-path support
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compile checker with the pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          RUSTUP_TOOLCHAIN=1.96.0 cargo test -p vermilion_backend --bin vrml_check
