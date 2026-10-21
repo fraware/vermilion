@@ -62,6 +62,23 @@ regen() {
 
 manifest="$workdir/generated/incr.json"
 
+# Portable, fail-closed source rewrite. GNU and BSD sed differ on in-place
+# editing syntax; exact-count substitution guards the experiment.
+replace_fragment() {
+  python3 - "$workdir/incr.rs" "$1" "$2" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+old, new = sys.argv[2:]
+source = path.read_text(encoding="utf-8")
+count = source.count(old)
+if count != 1:
+    raise SystemExit(f"expected exactly one source fragment {old!r}; found {count}")
+path.write_text(source.replace(old, new, 1), encoding="utf-8")
+PY
+}
+
 echo "== base generation =="
 regen | tee "$workdir/base.out"
 cp "$manifest" "$workdir/base.json"
@@ -73,18 +90,18 @@ grep -q unchanged "$workdir/a.out"
 cmp -s "$manifest" "$workdir/base.json"
 
 echo "== B: moving code changes locations but not semantics =="
-sed -i '' 's|^verus! {$|verus! {\n\n// pushed everything two lines down|' "$workdir/incr.rs"
+replace_fragment 'verus! {' $'verus! {\n\n// pushed everything two lines down'
 regen > "$workdir/b.out"
 grep -q updated "$workdir/b.out"
 cp "$manifest" "$workdir/b.json"
 
 echo "== C: callee body-only edit touches only the callee =="
-sed -i '' 's|assert(y > 0)|assert(y > 0 \&\& y < 2000)|' "$workdir/incr.rs"
+replace_fragment 'assert(y > 0)' 'assert(y > 0 && y < 2000)'
 regen > /dev/null
 cp "$manifest" "$workdir/c.json"
 
 echo "== D: callee contract edit invalidates the caller too =="
-sed -i '' 's|y == x + 1,|y == x + 1 \&\& y <= 1000,|' "$workdir/incr.rs"
+replace_fragment 'y == x + 1,' 'y == x + 1 && y <= 1000,'
 regen > /dev/null
 cp "$manifest" "$workdir/d.json"
 
