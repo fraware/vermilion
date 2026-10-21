@@ -138,12 +138,7 @@ jobs:
             --trace .vermilion/dalek-provenance/lower-unsimplified.stderr \
             --output .vermilion/dalek-provenance/provenance-unsimplified.json
           python3 scripts/compare_dalek_bv_modes.py \
-            .vermilion/dalek-provenance/provenance.json
-            .vermilion/dalek-provenance/provenance-unsimplified.json
-            .vermilion/dalek-provenance/mode-comparison.json
-            .vermilion/dalek-provenance/lower-unsimplified.stderr
-            .vermilion/dalek-provenance/generator-unsimplified.stderr
-            .vermilion/dalek-provenance/selected-lean-unsimplified/ \
+            .vermilion/dalek-provenance/provenance.json \
             .vermilion/dalek-provenance/provenance-unsimplified.json \
             --output .vermilion/dalek-provenance/mode-comparison.json
           (cd .vermilion/dalek-provenance &&
@@ -173,6 +168,11 @@ jobs:
           name: dalek-bv-source-sst-ir-lean-provenance
           path: |
             .vermilion/dalek-provenance/provenance.json
+            .vermilion/dalek-provenance/provenance-unsimplified.json
+            .vermilion/dalek-provenance/mode-comparison.json
+            .vermilion/dalek-provenance/lower-unsimplified.stderr
+            .vermilion/dalek-provenance/generator-unsimplified.stderr
+            .vermilion/dalek-provenance/selected-lean-unsimplified/
             .vermilion/dalek-provenance/SHA256SUMS
             .vermilion/dalek-provenance/lower.stderr
             .vermilion/dalek-provenance/frontend.stderr
