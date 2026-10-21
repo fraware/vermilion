@@ -6099,6 +6099,31 @@ impl Lowering<'_> {
                 let mut body = Vec::new();
                 for (index, conclusion) in ensures.iter().enumerate() {
                     let lowered = lower_exp(self.ctx, &self.env, conclusion)?;
+                    // Source-keyed opt-in research instrumentation. This captures
+                    // source SST and lowered expressions; it proves no theorem.
+                    if std::env::var_os("VERMILION_BV_PROVENANCE").is_some() {
+                        let here = span(&conclusion.span);
+                        let file = here.file.replace('\\', "/");
+                        let selected = (file.ends_with("/mul_lemmas.rs")
+                            && [227, 231].contains(&here.start_line))
+                            || (file.ends_with("/pow2k_lemmas.rs")
+                                && [236, 240].contains(&here.start_line))
+                            || (file.ends_with("/field_u64.rs")
+                                && [1431, 1446].contains(&here.start_line));
+                        if selected {
+                            eprintln!(
+                                "VRML_BV_PROVENANCE\tfile={}\tline={}\tcolumn={}\tindex={}\trequires={}\tensures={}\traw={:?}\tlowered={:?}",
+                                file, here.start_line, here.start_column, index,
+                                requires.len(), ensures.len(), &conclusion.x, &lowered
+                            );
+                            for (req_id, req) in requires.iter().enumerate() {
+                                eprintln!(
+                                    "VRML_BV_REQUIRE\tfile={}\tline={}\tindex={}\traw={:?}",
+                                    file, here.start_line, req_id, &req.x
+                                );
+                            }
+                        }
+                    }
                     let ordinal = self.statements.len();
                     let base_id = format!("bv_{ordinal}_{index}");
                     let occurrence = self.bitvector_ids.entry(base_id.clone()).or_default();
