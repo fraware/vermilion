@@ -8,6 +8,7 @@ present. Native proof acceptance has its own independent gate.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -110,6 +111,56 @@ def init_project(root: Path, source_paths: list[str], mode: str) -> Path:
     return path
 
 
+NATIVE_FORMAT = "vermilion-native-sdk-v1"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def native_sdk_manifest(sdk: Path) -> tuple[bool, list[str]]:
+    """A malformed or tampered binary bundle never falls back to source mode."""
+    manifest = sdk / ".vermilion/native-sdk.json"
+    if not manifest.exists() and not manifest.is_symlink():
+        return False, []
+    errors = []
+    try:
+        if manifest.is_symlink():
+            raise ContractError("native SDK manifest must not be a symlink")
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if (not isinstance(data, dict) or data.get("format") != NATIVE_FORMAT
+                or not isinstance(data.get("files"), dict)
+                or not data["files"]):
+            raise ContractError("native SDK manifest schema is invalid")
+        required = {**BINARIES, "Lean library": LEAN_LIBRARY}
+        expected = set(required.values()) | {
+            "lean-toolchain", "lakefile.lean", "lake-manifest.json",
+            ".verus-checkout/rust-toolchain.toml"
+        }
+        if not expected.issubset(data["files"]):
+            raise ContractError("native SDK manifest omits mandatory files")
+        plugin = data.get("plugin")
+        if plugin not in PLUGIN_CANDIDATES or plugin not in data["files"]:
+            raise ContractError("native SDK plugin identity is invalid")
+        for relative, digest in data["files"].items():
+            if (not isinstance(relative, str) or not isinstance(digest, str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+                errors.append("malformed native SDK file digest")
+                continue
+            location = (sdk / relative).resolve()
+            if not location.is_relative_to(sdk) or not location.is_file():
+                errors.append(f"missing or escaping native SDK file: {relative}")
+            elif _sha256(location) != digest:
+                errors.append(f"native SDK file digest mismatch: {relative}")
+    except (ContractError, OSError, ValueError, TypeError, UnicodeError) as exc:
+        errors.append(str(exc))
+    return True, errors
+
+
 def check_sdk(sdk: Path) -> dict:
     """Pure filesystem-level preflight; never claims proof acceptance."""
     sdk = sdk.expanduser().resolve(strict=True)
@@ -132,12 +183,15 @@ def check_sdk(sdk: Path) -> dict:
     rust_pin = sdk / ".verus-checkout/rust-toolchain.toml"
     if not rust_pin.is_file():
         missing.append("Verus Rust toolchain pin")
-    checker_src = sdk / "crates/vermilion_backend/src/bin/vrml_check.rs"
-    if not checker_src.is_file() or (
-        'std::env::var_os("VRML_CVC5_PLUGIN")'
-        not in checker_src.read_text(encoding="utf-8")
-    ):
-        missing.append("checker external native-plugin path support")
+    is_bundle, integrity_errors = native_sdk_manifest(sdk)
+    missing.extend(integrity_errors)
+    if not is_bundle:
+        checker_src = sdk / "crates/vermilion_backend/src/bin/vrml_check.rs"
+        if not checker_src.is_file() or (
+            'std::env::var_os("VRML_CVC5_PLUGIN")'
+            not in checker_src.read_text(encoding="utf-8")
+        ):
+            missing.append("checker external native-plugin path support")
     for executable in ("lean", "lake", "rustup"):
         if shutil.which(executable) is None:
             missing.append(f"PATH tool: {executable}")
@@ -146,7 +200,8 @@ def check_sdk(sdk: Path) -> dict:
         "ready_for_native_attempt": not missing,
         "missing": missing,
         "plugin": plugin,
-        "scope": "filesystem and PATH preflight only; no native proof check",
+        "native_bundle": is_bundle,
+        "scope": "filesystem, pin and digest preflight only; no native proof check",
     }
 
 
