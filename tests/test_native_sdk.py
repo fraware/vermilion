@@ -8,8 +8,9 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from pack_native_sdk import build
-from vrml_external import BINARIES, LEAN_LIBRARY, PLUGIN_CANDIDATES, (
-    ContractError, check_sdk, native_sdk_manifest
+from vrml_external import (
+    BINARIES, LEAN_LIBRARY, PLUGIN_CANDIDATES,
+    ContractError, check_sdk, native_sdk_manifest,
 )
 
 
