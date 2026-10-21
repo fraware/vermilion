@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: standalone-project-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   project-contract:
     runs-on: ubuntu-24.04
@@ -20,6 +24,8 @@ jobs:
         run: |
           python3 -m py_compile scripts/vrml_external.py
           python3 -m unittest discover -s tests -p test_vrml_external.py -v
+          python3 -m py_compile scripts/vrml_external_verify.py scripts/vrml_external_bindings.py
+          python3 -m unittest discover -s tests -p test_vrml_external_bindings.py -v
 
   native-checker:
     name: Compile external plugin-path support

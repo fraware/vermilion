@@ -17,6 +17,7 @@ import sys
 import hashlib
 
 from vrml_external import BINARIES, PLUGIN_CANDIDATES, ContractError, check_sdk
+from vrml_external_bindings import verify_bindings
 
 PIN_RE = re.compile(r'(?m)^\s*channel\s*=\s*"([^"]+)"')
 VSTD_RE = re.compile(r'(?m)^\s*use\s+vstd::')
@@ -187,11 +188,15 @@ def verify(project: Path, sdk: Path, source_override: str | None = None) -> int:
             raise ContractError("proof twin is missing")
         if any(HOLE_RE.search(p.read_text(encoding="utf-8")) for p in twin_paths):
             raise ContractError("unresolved Lean proof hole in synchronized twin")
+        # The kernel must check proofs of the exact freshly generated
+        # statements, not a user-edited weaker theorem.
+        verify_bindings(project, manifest)
         twin = execute([str(sdk / BINARIES["checker"]),
                         str(manifest_path.relative_to(project)), "--twin-check"],
                        project, env, "twin-check", logdir)
         if twin.returncode != 0:
             raise ContractError("native kernel checking of proof twins failed")
+        verify_bindings(project, manifest)
         verdict["verdict"] = "verified"
         verdict["proof_twins"] = [str(p.relative_to(project)) for p in twin_paths]
         result_code = 0
