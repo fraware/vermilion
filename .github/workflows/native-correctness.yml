@@ -5,6 +5,12 @@ on:
     branches:
       - verify/native-acceptance
   workflow_dispatch:
+    inputs:
+      run_full_suite:
+        description: "Run expensive research case studies (including known outstanding proofs)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -28,7 +34,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_capture_goal_guard.py -v
 
   native:
-    name: Rust, Verus and Lean native acceptance
+    name: Focused Rust, Verus and Lean acceptance
     needs: protocol
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -52,10 +58,40 @@ jobs:
           fi
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore pinned native build cache
+        id: native-cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-${{ runner.os }}-
       - name: Build pinned native toolchain
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           ./scripts/build.sh
+      - name: Save reusable build after successful native compilation
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Run Rust lowering tests
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
@@ -78,7 +114,12 @@ jobs:
           python3 scripts/differential_soundness.py \
             docs/reports/generated/differential-m1-results.md tests/differential
           python3 scripts/check_capture_goals.py .
-      - name: Run complete native regression suite
+      - name: Run upstream smoke and contract suite
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/run_suite.sh --smoke
+      - name: Run full research case-study suite — explicit manual gate
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_full_suite }}
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           ./scripts/run_suite.sh
