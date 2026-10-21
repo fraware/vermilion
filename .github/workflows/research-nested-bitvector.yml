@@ -1,0 +1,88 @@
+name: Nested bit-vector query causality (research only)
+
+on:
+  push:
+    branches:
+      - research/nested-bitvector-query-causality
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-nested-bv-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  query-integrity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate research-only harness syntax
+        run: |
+          python3 -m py_compile scripts/research_bv_assert_gate.py scripts/run_differential.py
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | \
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore same pinned native toolchain as current main
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-${{ runner.os }}-
+      - name: Build pinned native verifier
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Compare adversarial nested bit-vector verdicts in both modes
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          mkdir -p .vermilion/bv-causality
+          status=0
+          for mode in per-function per-file; do
+            rm -f .vermilion/differential-cache.json
+            set +e
+            python3 scripts/run_differential.py \
+              --emit-mode "$mode" --case-prefix c_research_bv_ \
+              > ".vermilion/bv-causality/${mode}.stdout" 2> ".vermilion/bv-causality/${mode}.stderr"
+            differential_status=$?
+            set -e
+            cp docs/reports/generated/differential-m1-results.md \
+              ".vermilion/bv-causality/${mode}.md" || exit 2
+            python3 scripts/research_bv_assert_gate.py \
+              ".vermilion/bv-causality/${mode}.md" || status=1
+            if [ "$differential_status" -eq 2 ]; then status=2; fi
+            tar -czf ".vermilion/bv-causality/${mode}-generated.tar.gz" \
+              -C tests/differential generated
+          done
+          (cd .vermilion/bv-causality && sha256sum * > SHA256SUMS)
+          exit "$status"
+      - name: Preserve positive/negative native receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nested-bv-research-evidence
+          path: .vermilion/bv-causality/
+          if-no-files-found: warn
+          retention-days: 14

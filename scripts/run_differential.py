@@ -91,11 +91,17 @@ def lean_generator_stale():
 
 def main() -> int:
     emit_mode = "per-function"
+    case_prefix = None  # Research-only targeted falsification, no changes to the default corpus.
     arguments = sys.argv[1:]
     while arguments:
         argument = arguments.pop(0)
         if argument == "--emit-mode" and arguments:
             emit_mode = arguments.pop(0)
+        elif argument == "--case-prefix" and arguments:
+            case_prefix = arguments.pop(0)
+            if not case_prefix or "/" in case_prefix or ".." in case_prefix:
+                print("invalid case prefix", file=sys.stderr)
+                return 2
         else:
             print(f"unknown argument {argument} "
                   "(usage: run_differential.py [--emit-mode per-file|per-function])")
@@ -202,6 +208,11 @@ def main() -> int:
 
     rows, verdict_hits, span_hits, span_total = [], 0, 0, 0
     cases = sorted(CASES.glob("*.rs"))
+    if case_prefix is not None:
+        cases = [case for case in cases if case.stem.startswith(case_prefix)]
+    if not cases:
+        print("no differential cases selected", file=sys.stderr)
+        return 2
     progress = Progress(len(cases))
 
     def measure(case, rel, source):
