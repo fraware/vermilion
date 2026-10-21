@@ -1060,6 +1060,15 @@ fn main() {
         }
     };
 
+    // An explicitly selected external SDK plugin is mandatory. Without this
+    // check an absent plugin would be silently omitted, allowing a success
+    // verdict under a different checker configuration than the user selected.
+    if let Some(requested) = std::env::var_os("VRML_CVC5_PLUGIN") {
+        if !std::path::Path::new(&requested).is_file() {
+            eprintln!("VRML_CVC5_PLUGIN is not a readable plugin file");
+            std::process::exit(2);
+        }
+    }
     let lean_path = resolve_lean_path();
     let units = units_of(&manifest, &only);
 
