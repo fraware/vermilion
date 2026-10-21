@@ -25,6 +25,8 @@ jobs:
         run: |
           python3 -m py_compile scripts/audit_dalek_bv_provenance.py
           python3 scripts/audit_dalek_bv_provenance.py --help
+          python3 -m py_compile scripts/compare_dalek_bv_modes.py
+          python3 scripts/compare_dalek_bv_modes.py --help
       - name: Install pinned Verus and Lean host prerequisites
         run: |
           sudo apt-get update
@@ -115,6 +117,54 @@ jobs:
                   shutil.copy2(source,target/source.name)
                   copied.add(source)
           print(f"Preserved {len(copied)} generated target Lean modules")
+          PY
+          # A second, source-identical pass disables ONLY the pinned
+          # Verus SST bit-vector constant simplifier. This must expose
+          # the source-level propositions to the Lean renderer.
+          VERMILION_NO_BV_SIMPLIFY=1 VERMILION_BV_PROVENANCE=1 \
+            ./crates/vermilion_direct/target/release/vermilion_direct \
+            .vermilion/dalek-provenance/dalek-vir.bin \
+            --out .vermilion/dalek-provenance/dalek-ir-no-bv-simplify.sexp \
+            > .vermilion/dalek-provenance/lower-unsimplified.stdout \
+            2> .vermilion/dalek-provenance/lower-unsimplified.stderr
+          ./.lake/build/bin/vrml_gen --mode per-function \
+            --generated-root case-studies/dalek-lite/generated-unsimplified \
+            .vermilion/dalek-provenance/dalek-ir-no-bv-simplify.sexp \
+            > .vermilion/dalek-provenance/generator-unsimplified.stdout \
+            2> .vermilion/dalek-provenance/generator-unsimplified.stderr
+          python3 scripts/audit_dalek_bv_provenance.py \
+            --repo "$repository" \
+            --generated case-studies/dalek-lite/generated-unsimplified \
+            --trace .vermilion/dalek-provenance/lower-unsimplified.stderr \
+            --output .vermilion/dalek-provenance/provenance-unsimplified.json
+          python3 scripts/compare_dalek_bv_modes.py \
+            .vermilion/dalek-provenance/provenance.json
+            .vermilion/dalek-provenance/provenance-unsimplified.json
+            .vermilion/dalek-provenance/mode-comparison.json
+            .vermilion/dalek-provenance/lower-unsimplified.stderr
+            .vermilion/dalek-provenance/generator-unsimplified.stderr
+            .vermilion/dalek-provenance/selected-lean-unsimplified/ \
+            .vermilion/dalek-provenance/provenance-unsimplified.json \
+            --output .vermilion/dalek-provenance/mode-comparison.json
+          (cd .vermilion/dalek-provenance &&
+            sha256sum dalek-ir-no-bv-simplify.sexp \
+              provenance-unsimplified.json mode-comparison.json \
+              >> SHA256SUMS)
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import shutil
+          out=pathlib.Path(".vermilion/dalek-provenance")
+          observations=json.loads((out/"provenance-unsimplified.json").read_text())["observations"]
+          copied=set()
+          target=out/"selected-lean-unsimplified"
+          target.mkdir(exist_ok=True)
+          for item in observations:
+              source=pathlib.Path(item["generated_lean"]["lean_file"])
+              if source not in copied:
+                  shutil.copy2(source,target/source.name)
+                  copied.add(source)
+          print(f"Preserved {len(copied)} unsimplified Lean modules")
           PY
       - name: Preserve provenance (not a verification result)
         if: always()
