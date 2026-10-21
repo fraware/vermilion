@@ -44,3 +44,58 @@ unaltered generated statements and auditing their imported axioms.
 
 All eight proof holes, 38 refused functions, and the upstream trusted
 assumption floor remain open unless independently discharged.
+
+## Pinned-source comparison (2026-10-21)
+
+A manual source-to-proof inspection traced the six `True` goals to their recorded
+bit-vector assertion locations in pinned
+[`Beneficial-AI-Foundation/dalek-lite`](https://github.com/Beneficial-AI-Foundation/dalek-lite/tree/de9ebf01599fedbbced28b938e2c36c538fe4ae5)
+(commit `de9ebf01599fedbbced28b938e2c36c538fe4ae5`) and the tracked
+[`field_u64.rs`](../../case-studies/dalek-lite/field_u64.rs).
+The line references below come from the recorded Lean metadata; file locations
+in the original pinned source were checked separately for the two lemma files.
+
+| Proof unit | `True` obligation source spans | Source operation |
+| --- | --- | --- |
+| `lemma_mul_boundary` | `mul_lemmas.rs:227`, `:231` | Two nested `by (bit_vector)` constant-shift/multiplication assertions |
+| `lemma_pow2k_loop_boundary` | `pow2k_lemmas.rs:236`, `:240` | Corresponding two nested `by (bit_vector)` assertions |
+| `square2` | tracked `field_u64.rs:1431`, `:1446` | Bit-vector assertions in loop and proof code relating powers-of-two bounds |
+
+The two pinned lemma sources are:
+[`mul_lemmas.rs`](https://github.com/Beneficial-AI-Foundation/dalek-lite/blob/de9ebf01599fedbbced28b938e2c36c538fe4ae5/curve25519-dalek/src/lemmas/field_lemmas/mul_lemmas.rs)
+and
+[`pow2k_lemmas.rs`](https://github.com/Beneficial-AI-Foundation/dalek-lite/blob/de9ebf01599fedbbced28b938e2c36c538fe4ae5/curve25519-dalek/src/lemmas/field_lemmas/pow2k_lemmas.rs).
+
+This inspection identifies a more exact question than a literal-`True` count.
+In both lemma proof units, a nested bit-vector query has a `True` Lean
+conclusion. Separately, a later `assert_1` obligation checks the relevant
+outer arithmetic equality **under an `assume` hypothesis representing the
+nested assertion**. In `lemma_mul_boundary`, for example, the inner query
+`assert_bv_3_0` at line 227 states `True`; the later `assert_1`
+includes `assume_8` for the u128 multiplication equality. This
+correspondence is a statement-level observation only: it does **not**
+establish that the nested source assertion was independently discharged.
+
+The Rust adapter's
+[`StmX::AssertBitVector` lowering](../../crates/vermilion_direct/src/lower.rs)
+places `ensures` expressions into an isolated loop. The
+[VC policy](../vcgen.md) intentionally isolates assertion queries to avoid
+circular assumptions from the enclosing context. A `True` query in these
+specific generated twins could therefore reflect source-to-SST query
+construction, proof-script handling, or a missing verification condition.
+The current static evidence does not distinguish those explanations.
+
+**Required experiment before any soundness conclusion:** reconstruct the exact
+pinned Verus-exported `AssertBitVector` `requires`/`ensures` payloads
+and the corresponding pre-/post-query assumptions for these six locations.
+Then execute a controlled negative nested-query fixture with identical
+source and pins under Verus and Vermilion, retaining VIR/SST export, neutral
+IR, generated Lean, verdicts, and statement hashes. A failed native query
+must neither become an accepted `True` obligation nor authorize an
+unchecked downstream assumption. This has **not yet been demonstrated or
+refuted** by the static inspection.
+
+This evidence is separate from the two substantive `lemma_or_bit`
+bitwise theorems; those also remain open. The eight source-level `sorry`
+markers, statement-hash identities, 38 lowering refusals, and full-suite
+acceptance status remain unchanged.
