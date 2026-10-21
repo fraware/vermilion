@@ -1,0 +1,23 @@
+name: Dalek Proof Inventory
+
+on:
+  push:
+    branches:
+      - research/dalek-proof-inventory
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check exact outstanding Lean obligation inventory
+        run: |
+          python3 -m py_compile scripts/audit_dalek_holes.py
+          python3 scripts/audit_dalek_holes.py --root "$PWD" --output /tmp/dalek-inventory.json
+          test -s /tmp/dalek-inventory.json
