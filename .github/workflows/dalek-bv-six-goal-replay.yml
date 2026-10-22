@@ -25,6 +25,7 @@ jobs:
         run: |
           python3 -m py_compile scripts/audit_dalek_bv_provenance.py
           python3 -m py_compile scripts/replay_dalek_bv_goals.py
+          python3 -m py_compile scripts/replay_dalek_bv_contexts.py
           python3 scripts/audit_dalek_bv_provenance.py --help
           python3 -m py_compile scripts/compare_dalek_bv_modes.py
           python3 scripts/compare_dalek_bv_modes.py --help
@@ -197,6 +198,57 @@ jobs:
             .vermilion/dalek-provenance/six-goal-receipt.json
             .vermilion/dalek-provenance/six-goal-lean.stdout
             .vermilion/dalek-provenance/six-goal-lean.stderr
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Kernel-check six original generated theorem contexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          evidence=".vermilion/dalek-provenance"
+          generated="$PWD/case-studies/dalek-lite/generated-unsimplified"
+          python3 scripts/replay_dalek_bv_contexts.py \
+            --generated "$generated" \
+            --report "$evidence/provenance-unsimplified.json" \
+            --output "$evidence/context-replay" \
+            --receipt "$evidence/context-replay-receipt.json"
+          source scripts/lean_env.sh
+          export LEAN_PATH="$generated:$LEAN_PATH"
+          # Each generated unit imports its own pinned, fully compiled Specs,
+          # not hand-written surrogate declarations.
+          for stem in field_u64 field_lemmas_mul_lemmas pow2k_lemmas; do
+            test -f "$generated/$stem/Specs.lean"
+            timeout 600s lean -o "$generated/$stem/Specs.olean" \
+              "$generated/$stem/Specs.lean" \
+              > "$evidence/$stem-specs.stdout" \
+              2> "$evidence/$stem-specs.stderr"
+            test ! -s "$evidence/$stem-specs.stderr"
+            timeout 480s lean "$evidence/context-replay/$stem.lean" \
+              > "$evidence/$stem-context.stdout" \
+              2> "$evidence/$stem-context.stderr"
+            test ! -s "$evidence/$stem-context.stderr"
+            if grep -Eiq 'sorryAx|admit' "$evidence/$stem-context.stdout"; then
+              echo "Admission found in kernel context audit" >&2
+              exit 2
+            fi
+          done
+          (cd "$evidence" &&
+            sha256sum context-replay/*.lean context-replay-receipt.json \
+              *-context.stdout *-context.stderr *-specs.stdout *-specs.stderr \
+              >> SHA256SUMS)
+          echo "SIX_ORIGINAL_THEOREM_CONTEXTS_KERNEL_CHECKED"
+      - name: Preserve original-context Lean replay
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-bv-six-original-contexts
+          path: |
+            .vermilion/dalek-provenance/context-replay/
+            .vermilion/dalek-provenance/context-replay-receipt.json
+            .vermilion/dalek-provenance/*-context.stdout
+            .vermilion/dalek-provenance/*-context.stderr
+            .vermilion/dalek-provenance/*-specs.stdout
+            .vermilion/dalek-provenance/*-specs.stderr
           if-no-files-found: warn
           retention-days: 14
       - name: Preserve provenance (not a verification result)
