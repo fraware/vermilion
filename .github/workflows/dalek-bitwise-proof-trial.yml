@@ -75,7 +75,17 @@ jobs:
           cat .vermilion/bitwise-research/lean.stderr
           if [ "$ret" -ne 0 ]; then exit "$ret"; fi
           test ! -s .vermilion/bitwise-research/lean.stderr
-          if grep -Eiq 'sorryAx|admit' .vermilion/bitwise-research/lean.stdout; then exit 2; fi
+          # The research goal is an axiom-minimal Lean proof. Native SAT
+          # certificate evaluation axioms are not permitted at this stage.
+          if grep -Eiq 'sorryAx|admit|_native\\.|Lean\\.trustCompiler|Lean\\.ofReduceBool|Lean\\.ofReduceNat' \\
+              .vermilion/bitwise-research/lean.stdout; then
+            echo "Native computation/admission axiom was found" >&2
+            exit 2
+          fi
+          grep -F "'DalekBitwiseTrial.nonoverlap' depends on axioms:" \\
+            .vermilion/bitwise-research/lean.stdout
+          grep -F "'DalekBitwiseTrial.same_position' depends on axioms:" \\
+            .vermilion/bitwise-research/lean.stdout
           (cd .vermilion/bitwise-research && sha256sum * > SHA256SUMS)
           echo "TWO_BITWISE_ORIGINAL_SIGNATURES_KERNEL_CHECKED"
       - name: Preserve success or diagnostics
