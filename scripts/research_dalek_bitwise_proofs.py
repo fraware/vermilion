@@ -39,7 +39,7 @@ PROOF_NONOVERLAP = r'''
     · right; simp [h]
   have h := bv_or_and_ne8 (BitVec.ofInt 8 mask) (BitVec.ofInt 8 val)
     pos.toNat j.toNat hp hq hne hv
-  simpa [Vermilion.Bits.band, Vermilion.Bits.bor,
+  simpa only [Vermilion.Bits.band, Vermilion.Bits.bor,
     Vermilion.Bits.shl, ofInt_toNat8] using
       congrArg (fun (v : BitVec 8) => (v.toNat : Int)) h
 '''
@@ -53,15 +53,16 @@ PROOF_SAME = r'''
   subst j
   rcases loop_1_iteration_6 with hzero | hone
   · subst val
-    simp [Vermilion.Bits.band, Vermilion.Bits.bor,
-      Vermilion.Bits.shl, ofInt_toNat8]
+    simp only [Vermilion.Bits.band, Vermilion.Bits.bor,
+      Vermilion.Bits.shl, ofInt_toNat8] at ⊢
+    simp
   · subst val
     have h := bv_or_self_bit8 (BitVec.ofInt 8 mask) pos.toNat hp
     have hleft :
         ¬ (Vermilion.Bits.band 8
           (Vermilion.Bits.bor 8 mask (Vermilion.Bits.shl 8 1 pos))
           (Vermilion.Bits.shl 8 1 pos) = 0) := by
-      simpa [Vermilion.Bits.band, Vermilion.Bits.bor,
+      simpa only [Vermilion.Bits.band, Vermilion.Bits.bor,
         Vermilion.Bits.shl, ofInt_toNat8] using h
     simp [hleft]
 '''
