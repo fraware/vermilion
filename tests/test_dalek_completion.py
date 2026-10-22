@@ -36,7 +36,7 @@ class FullConeTests(unittest.TestCase):
         self.manifest.write_text(json.dumps(self.source))
 
     def test_no_checker_cannot_pass(self):
-        self.assertFalse(complete(self.generated, self.proofs, None)["accepted"])
+        self.assertFalse(complete(self.generated, self.proofs, None, None)["accepted"])
 
     def test_refusals_block(self):
         self.source["refused"] = [{"function": "load8_at", "message": "missing termination"}]
@@ -73,15 +73,37 @@ class FullConeTests(unittest.TestCase):
         checker = self.root / "checker"
         checker.write_text("#!/bin/sh\nexit 1\n")
         checker.chmod(0o755)
-        self.assertFalse(complete(self.generated, self.proofs, checker)["accepted"])
+        self.assertFalse(complete(self.generated, self.proofs, checker, checker)["accepted"])
 
     def test_checker_must_pass_exact_twin_flag(self):
         checker = self.root / "checker"
         checker.write_text('#!/bin/sh\n[ "$2" = "--twin-check" ] || exit 3\nexit 0\n')
         checker.chmod(0o755)
-        result = complete(self.generated, self.proofs, checker)
+        probe = self.root / "sync"
+        probe.write_text('#!/bin/sh\n[ "$2" = "--probe" ] || exit 5\nexit 0\n')
+        probe.chmod(0o755)
+        result = complete(self.generated, self.proofs, checker, probe)
         self.assertTrue(result["accepted"])
         self.assertTrue(result["kernel_checked"])
+
+    def test_unverified_freshness_fails(self):
+        checker = self.root / "checker"
+        checker.write_text('#!/bin/sh\nexit 0\n')
+        checker.chmod(0o755)
+        probe = self.root / "sync"
+        probe.write_text('#!/bin/sh\nexit 1\n')
+        probe.chmod(0o755)
+        result = complete(self.generated, self.proofs, checker, probe)
+        self.assertFalse(result["accepted"])
+        self.assertTrue(any("stale proof twin" in x for x in result["problems"]))
+
+    def test_refusal_dedup_across_manifests(self):
+        self.source["refused"] = [{"function": "recursive_fn", "message": "missing decrease"}]
+        self.persist()
+        (self.generated / "another.json").write_text(json.dumps(self.source))
+        result = audit(self.generated, self.proofs)
+        self.assertEqual(result["refused_count"], 1)
+        self.assertEqual(result["refused_records_count"], 2)
 
 
 if __name__ == "__main__":
