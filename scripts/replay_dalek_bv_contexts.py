@@ -22,6 +22,21 @@ from replay_dalek_bv_goals import ASSERT, END_HEADER, extract_conclusion
 STEMS = {"field_u64", "field_lemmas_mul_lemmas", "pow2k_lemmas"}
 
 
+def validate_original_imports(imports: str, stem: str, source_key: str) -> list[str]:
+    """Require real generator imports, permitting only this unit's modules."""
+    declared = re.findall(r"(?m)^import ([^\s]+)\s*$", imports)
+    if "Vermilion.Obligations" not in declared:
+        raise ValueError(f"missing original obligations import: {source_key}")
+    allowed = {
+        "Vermilion.Obligations",
+        f"generated.{stem}.Specs",
+        f"generated.{stem}.Evidence",
+    }
+    if len(declared) != len(set(declared)) or not set(declared).issubset(allowed):
+        raise ValueError(f"unexpected/duplicate original import: {source_key}: {declared}")
+    return declared
+
+
 def source_declaration(path: Path, obligation: str, digest: str):
     source = path.read_text(encoding="utf-8")
     markers = list(START.finditer(source))
@@ -103,16 +118,7 @@ def replay(generated: Path, provenance: Path, output: Path):
         # generated.<stem>.Specs and generated.<stem>.Evidence; an
         # obligation that does not reference a shared definition might
         # import neither. Preserve that *actual* header exactly.
-        declared_imports = re.findall(r"(?m)^import ([^\\s]+)\\s*$", imports)
-        if "Vermilion.Obligations" not in declared_imports:
-            raise ValueError(f"missing original obligations import: {source_key}")
-        allowed = {
-            "Vermilion.Obligations",
-            f"generated.{stem}.Specs",
-            f"generated.{stem}.Evidence",
-        }
-        if len(declared_imports) != len(set(declared_imports)) or not set(declared_imports).issubset(allowed):
-            raise ValueError(f"unexpected/duplicate actual source import: {source_key}: {declared_imports}")
+        validate_original_imports(imports, stem, source_key)
         proof_name = f"source_{name.removesuffix('.rs')}_{line}"
         leaf = entry["obligation"].rsplit(".", 1)[-1]
         old = f"@[vrml_obligation] theorem {leaf}"

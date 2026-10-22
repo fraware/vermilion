@@ -26,6 +26,7 @@ jobs:
           python3 -m py_compile scripts/audit_dalek_bv_provenance.py
           python3 -m py_compile scripts/replay_dalek_bv_goals.py
           python3 -m py_compile scripts/replay_dalek_bv_contexts.py
+          python3 -m unittest discover -s tests -p test_dalek_bv_context_replay.py -v
           python3 scripts/audit_dalek_bv_provenance.py --help
           python3 -m py_compile scripts/compare_dalek_bv_modes.py
           python3 scripts/compare_dalek_bv_modes.py --help
