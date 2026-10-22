@@ -1,16 +1,16 @@
-name: Dalek BV six exact source-goal replay (research)
+name: Dalek full-cone completion gate (research negative control)
 
 on:
   push:
     branches:
-      - research/dalek-bv-six-goal-replay
+      - audit/dalek-completeness-20261022
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: dalek-bv-six-replay-\${{ github.ref }}
+  group: dalek-full-cone-gate-\${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,6 +26,8 @@ jobs:
           python3 -m py_compile scripts/audit_dalek_bv_provenance.py
           python3 -m py_compile scripts/replay_dalek_bv_goals.py
           python3 -m py_compile scripts/replay_dalek_bv_contexts.py
+          python3 -m py_compile scripts/check_dalek_completion.py
+          python3 -m unittest discover -s tests -p test_dalek_completion.py -v
           python3 -m py_compile scripts/replay_dalek_bv_full_blocks.py
           python3 -m unittest discover -s tests -p test_dalek_bv_full_blocks.py -v
           python3 -m unittest discover -s tests -p test_dalek_bv_context_replay.py -v
@@ -166,6 +168,33 @@ jobs:
                   copied.add(source)
           print(f"Preserved {len(copied)} unsimplified Lean modules")
           PY
+      - name: Assert full case study is still INCOMPLETE (negative control only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .vermilion/dalek-provenance
+          python3 scripts/check_dalek_completion.py \
+            --generated case-studies/dalek-lite/generated \
+            --proofs case-studies/dalek-lite/proofs \
+            --report-json .vermilion/dalek-provenance/completion-default.json \
+            --expect-incomplete
+          python3 scripts/check_dalek_completion.py \
+            --generated case-studies/dalek-lite/generated-unsimplified \
+            --proofs case-studies/dalek-lite/proofs \
+            --report-json .vermilion/dalek-provenance/completion-unsimplified.json \
+            --expect-incomplete
+          sha256sum .vermilion/dalek-provenance/completion-*.json \
+            > .vermilion/dalek-provenance/completion-SHA256SUMS
+      - name: Preserve explicit completeness refusal receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-completeness-negative-control
+          path: |
+            .vermilion/dalek-provenance/completion-*.json
+            .vermilion/dalek-provenance/completion-SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 14
       - name: Extract and kernel-check six exact unsimplified source goals
         shell: bash
         run: |
