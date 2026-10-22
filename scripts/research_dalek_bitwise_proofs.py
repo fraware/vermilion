@@ -113,12 +113,33 @@ def build(path: Path, dest: Path, receipt: Path):
         raise ValueError("missing existing kernel-proven BitVec helpers")
     if "private theorem bv_or_self_bit8" not in blocks[0]:
         raise ValueError("missing second BitVec helper")
+    # Research copy only: replace native bv_decide axiom dependencies with
+    # already-proved BitVec library laws and kernel-reduced finite cases.
+    # The tracked original proof twin remains unchanged.
+    helper = blocks[0]
+    old_distributivity = "  bv_decide\n"
+    old_nonzero = "  interval_cases p <;> bv_decide\n"
+    if helper.count(old_distributivity) != 1 or helper.count(old_nonzero) != 1:
+        raise ValueError("unexpected tracked bitwise helper proof structure")
+    helper = helper.replace(
+        old_distributivity, "  exact BitVec.and_or_distrib_right\n", 1
+    ).replace(
+        old_nonzero,
+        """  rw [BitVec.and_or_distrib_right, BitVec.and_self]
+  have hnonzero : (1#8 <<< p) ≠ 0#8 := by
+    interval_cases p <;> decide
+  intro h
+  exact hnonzero (BitVec.or_eq_zero_iff.mp h).2
+""", 1,
+    )
+    if "bv_decide" in helper:
+        raise ValueError("native BV tactic remained in isolated proof helpers")
     statements = [
         "import Vermilion.Obligations",
         "set_option maxRecDepth 16384",
         "set_option maxHeartbeats 0",
         "",
-        blocks[0].rstrip(),
+        helper.rstrip(),
         "",
         "namespace DalekBitwiseTrial",
         "",
