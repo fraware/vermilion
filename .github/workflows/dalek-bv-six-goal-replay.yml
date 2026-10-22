@@ -213,16 +213,30 @@ jobs:
             --output "$evidence/context-replay" \
             --receipt "$evidence/context-replay-receipt.json"
           source scripts/lean_env.sh
-          export LEAN_PATH="$generated:$LEAN_PATH"
-          # Each generated unit imports its own pinned, fully compiled Specs,
-          # not hand-written surrogate declarations.
+          # VrmlGen imports generated.<stem>.Specs, even though this
+          # experiment emits to generated-unsimplified/. Reproduce the
+          # generator's expected module namespace with byte-for-byte copies,
+          # not surrogate definitions, and compile their pinned oleans.
+          overlay="$PWD/$evidence/context-module-root"
+          mkdir -p "$overlay/generated"
+          export LEAN_PATH="$overlay:$LEAN_PATH"
           for stem in field_u64 field_lemmas_mul_lemmas pow2k_lemmas; do
             test -f "$generated/$stem/Specs.lean"
-            timeout 600s lean -o "$generated/$stem/Specs.olean" \
-              "$generated/$stem/Specs.lean" \
+            mkdir -p "$overlay/generated/$stem"
+            cp "$generated/$stem/Specs.lean" "$overlay/generated/$stem/Specs.lean"
+            timeout 600s lean -o "$overlay/generated/$stem/Specs.olean" \
+              "$overlay/generated/$stem/Specs.lean" \
               > "$evidence/$stem-specs.stdout" \
               2> "$evidence/$stem-specs.stderr"
             test ! -s "$evidence/$stem-specs.stderr"
+            if test -f "$generated/$stem/Evidence.lean"; then
+              cp "$generated/$stem/Evidence.lean" "$overlay/generated/$stem/Evidence.lean"
+              timeout 600s lean -o "$overlay/generated/$stem/Evidence.olean" \
+                "$overlay/generated/$stem/Evidence.lean" \
+                > "$evidence/$stem-evidence.stdout" \
+                2> "$evidence/$stem-evidence.stderr"
+              test ! -s "$evidence/$stem-evidence.stderr"
+            fi
             timeout 480s lean "$evidence/context-replay/$stem.lean" \
               > "$evidence/$stem-context.stdout" \
               2> "$evidence/$stem-context.stderr"
