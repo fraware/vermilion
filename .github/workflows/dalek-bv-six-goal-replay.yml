@@ -26,6 +26,8 @@ jobs:
           python3 -m py_compile scripts/audit_dalek_bv_provenance.py
           python3 -m py_compile scripts/replay_dalek_bv_goals.py
           python3 -m py_compile scripts/replay_dalek_bv_contexts.py
+          python3 -m py_compile scripts/replay_dalek_bv_full_blocks.py
+          python3 -m unittest discover -s tests -p test_dalek_bv_full_blocks.py -v
           python3 -m unittest discover -s tests -p test_dalek_bv_context_replay.py -v
           python3 scripts/audit_dalek_bv_provenance.py --help
           python3 -m py_compile scripts/compare_dalek_bv_modes.py
@@ -264,6 +266,47 @@ jobs:
             .vermilion/dalek-provenance/*-context.stderr
             .vermilion/dalek-provenance/*-specs.stdout
             .vermilion/dalek-provenance/*-specs.stderr
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Kernel-check six byte-preserved original obligation blocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          evidence=".vermilion/dalek-provenance"
+          generated="$PWD/case-studies/dalek-lite/generated-unsimplified"
+          python3 scripts/replay_dalek_bv_full_blocks.py \
+            --generated "$generated" \
+            --report "$evidence/provenance-unsimplified.json" \
+            --output "$evidence/full-block-subsets" \
+            --receipt "$evidence/full-block-receipt.json"
+          source scripts/lean_env.sh
+          export LEAN_PATH="$PWD/$evidence/context-module-root:$LEAN_PATH"
+          for stem in field_u64 field_lemmas_mul_lemmas pow2k_lemmas; do
+            test -f "$evidence/full-block-subsets/$stem.lean"
+            timeout 480s lean "$evidence/full-block-subsets/$stem.lean" \
+              > "$evidence/$stem-block.stdout" \
+              2> "$evidence/$stem-block.stderr"
+            test ! -s "$evidence/$stem-block.stderr"
+            if grep -Eiq 'sorryAx|admit' "$evidence/$stem-block.stdout"; then
+              echo "Admission found in generated block audit" >&2
+              exit 2
+            fi
+          done
+          (cd "$evidence" &&
+            sha256sum full-block-subsets/*.lean full-block-receipt.json \
+              *-block.stdout *-block.stderr >> SHA256SUMS)
+          echo "SIX_ORIGINAL_GENERATED_BLOCKS_KERNEL_CHECKED"
+      - name: Preserve exact generated proof-block receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-bv-six-exact-generated-blocks
+          path: |
+            .vermilion/dalek-provenance/full-block-subsets/
+            .vermilion/dalek-provenance/full-block-receipt.json
+            .vermilion/dalek-provenance/*-block.stdout
+            .vermilion/dalek-provenance/*-block.stderr
           if-no-files-found: warn
           retention-days: 14
       - name: Preserve provenance (not a verification result)
