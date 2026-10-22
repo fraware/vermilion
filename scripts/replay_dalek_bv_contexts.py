@@ -99,10 +99,20 @@ def replay(generated: Path, provenance: Path, output: Path):
                                                        entry["statement_hash"])
         if not header.rstrip().endswith(exact_conclusion):
             raise ValueError(f"original signature/conclusion mismatch: {source_key}")
-        if f"import {stem}.Specs\n" not in imports:
-            raise ValueError(f"missing original {stem}.Specs import: {source_key}")
-        if "import Vermilion.Obligations\n" not in imports:
+        # The pinned per-function generator names shared modules
+        # generated.<stem>.Specs and generated.<stem>.Evidence; an
+        # obligation that does not reference a shared definition might
+        # import neither. Preserve that *actual* header exactly.
+        declared_imports = re.findall(r"(?m)^import ([^\\s]+)\\s*$", imports)
+        if "Vermilion.Obligations" not in declared_imports:
             raise ValueError(f"missing original obligations import: {source_key}")
+        allowed = {
+            "Vermilion.Obligations",
+            f"generated.{stem}.Specs",
+            f"generated.{stem}.Evidence",
+        }
+        if len(declared_imports) != len(set(declared_imports)) or not set(declared_imports).issubset(allowed):
+            raise ValueError(f"unexpected/duplicate actual source import: {source_key}: {declared_imports}")
         proof_name = f"source_{name.removesuffix('.rs')}_{line}"
         leaf = entry["obligation"].rsplit(".", 1)[-1]
         old = f"@[vrml_obligation] theorem {leaf}"
