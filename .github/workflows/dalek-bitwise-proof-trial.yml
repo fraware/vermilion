@@ -1,0 +1,88 @@
+name: Dalek bitwise original-theorem proof trial (research)
+
+on:
+  push:
+    branches:
+      - research/dalek-bitwise-proof-trial
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bitwise-proof-trial-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lean-proof-trial:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate source-keyed proof extraction
+        run: |
+          python3 -m py_compile scripts/research_dalek_bitwise_proofs.py
+          python3 scripts/research_dalek_bitwise_proofs.py --help
+      - name: Install pinned Lean prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | \
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore pinned Lean build cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-${{ runner.os }}-
+      - name: Prepare exact pinned Vermilion imports
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Kernel-check both unchanged bitwise theorem signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          mkdir -p .vermilion/bitwise-research
+          python3 scripts/research_dalek_bitwise_proofs.py \
+            --output .vermilion/bitwise-research/two-goals.lean \
+            --receipt .vermilion/bitwise-research/receipt.json
+          source scripts/lean_env.sh
+          set +e
+          timeout 600s lean .vermilion/bitwise-research/two-goals.lean \
+            > .vermilion/bitwise-research/lean.stdout \
+            2> .vermilion/bitwise-research/lean.stderr
+          ret=$?
+          set -e
+          cat .vermilion/bitwise-research/lean.stderr
+          if [ "$ret" -ne 0 ]; then exit "$ret"; fi
+          test ! -s .vermilion/bitwise-research/lean.stderr
+          if grep -Eiq 'sorryAx|admit' .vermilion/bitwise-research/lean.stdout; then exit 2; fi
+          (cd .vermilion/bitwise-research && sha256sum * > SHA256SUMS)
+          echo "TWO_BITWISE_ORIGINAL_SIGNATURES_KERNEL_CHECKED"
+      - name: Preserve success or diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-bitwise-proof-trial
+          path: .vermilion/bitwise-research/
+          if-no-files-found: warn
+          retention-days: 14
