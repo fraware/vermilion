@@ -19,7 +19,7 @@ ADMIT = re.compile(r"(?m)^\s*(?:sorry|admit)\s*(?:--[^\n]*)?$")
 
 def audit(generated: Path, proofs: Path) -> dict:
     result = dict(accepted=False, kernel_checked=False, status="INCOMPLETE",
-                  manifest_count=0, obligation_count=0, refused_count=0,
+                  manifest_count=0, obligation_count=0, refused_count=0, refused_records_count=0,
                   tracked_admission_count=0, refused_functions=[],
                   tracked_admissions=[], problems=[])
     if not generated.is_dir():
@@ -30,6 +30,7 @@ def audit(generated: Path, proofs: Path) -> dict:
         result["problems"].append("no generated manifests")
         return result
     result["manifest_count"] = len(manifests)
+    distinct_refused = {}
     for file in manifests:
         try:
             doc = json.loads(file.read_text(encoding="utf-8"))
@@ -65,16 +66,25 @@ def audit(generated: Path, proofs: Path) -> dict:
             if not isinstance(unit, str) or not unit or not Path(unit).is_file():
                 result["problems"].append(f"missing Lean obligation source {name}: {unit}")
         for refused_row in refused:
-            result["refused_count"] += 1
+            result["refused_records_count"] += 1
             if (not isinstance(refused_row, dict)
-                or not isinstance(refused_row.get("function"), str)):
+                or not isinstance(refused_row.get("function"), str)
+                or not isinstance(refused_row.get("message"), str)):
                 result["problems"].append(f"invalid refusal: {file}")
+                continue
+            key = refused_row["function"]
+            if key in distinct_refused:
+                if distinct_refused[key]["message"] != refused_row["message"]:
+                    result["problems"].append(f"conflicting refusal messages for {key}")
             else:
-                result["refused_functions"].append({
+                distinct_refused[key] = {
                     "manifest": str(file),
-                    "function": refused_row["function"],
-                    "message": refused_row.get("message", ""),
-                })
+                    "function": key,
+                    "message": refused_row["message"],
+                }
+    result["refused_count"] = len(distinct_refused)
+    result["refused_functions"] = sorted(distinct_refused.values(),
+                                         key=lambda row: row["function"])
     if not proofs.is_dir():
         result["problems"].append(f"missing tracked proof twins: {proofs}")
         return result
@@ -97,15 +107,29 @@ def audit(generated: Path, proofs: Path) -> dict:
     return result
 
 
-def complete(generated: Path, proofs: Path, checker: Path | None) -> dict:
+def complete(generated: Path, proofs: Path, checker: Path | None,
+             sync_probe: Path | None) -> dict:
     result = audit(generated, proofs)
     if result["problems"] or result["refused_count"] or result["tracked_admission_count"]:
         return result
-    if checker is None or not checker.is_file():
-        result["problems"].append("full acceptance requires a native twin checker")
+    if generated.name != "generated":
+        result["problems"].append("full twin certification requires canonical generated/ path")
+        return result
+    if (checker is None or not checker.is_file()
+        or sync_probe is None or not sync_probe.is_file()):
+        result["problems"].append("full acceptance requires vrml_sync --probe and vrml_check --twin-check")
         return result
     for manifest in sorted(generated.glob("*.json")):
         try:
+            freshness = subprocess.run(
+                [str(sync_probe.resolve()), str(manifest), "--probe"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+            )
+            if freshness.returncode != 0:
+                result["problems"].append(
+                    f"stale proof twin at {manifest}: exit={freshness.returncode}; stderr={freshness.stderr[:1000]}"
+                )
+                return result
             verdict = subprocess.run(
                 [str(checker.resolve()), str(manifest), "--twin-check"],
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600,
@@ -130,17 +154,20 @@ def main() -> int:
     cli.add_argument("--proofs", type=Path, required=True)
     cli.add_argument("--report-json", type=Path, required=True)
     cli.add_argument("--checker", type=Path)
+    cli.add_argument("--sync-probe", type=Path)
     cli.add_argument("--expect-incomplete", action="store_true")
     options = cli.parse_args()
-    if options.expect_incomplete and options.checker:
+    if options.expect_incomplete and (options.checker or options.sync_probe):
         cli.error("negative control cannot request a positive checker verdict")
     result = (audit(options.generated, options.proofs) if options.expect_incomplete
-              else complete(options.generated, options.proofs, options.checker))
+              else complete(options.generated, options.proofs, options.checker,
+                            options.sync_probe))
     options.report_json.parent.mkdir(parents=True, exist_ok=True)
     options.report_json.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n",
                                    encoding="utf-8")
     print(f"STATUS={result['status']} manifests={result['manifest_count']} "
-          f"obligations={result['obligation_count']} refused={result['refused_count']} "
+          f"obligations={result['obligation_count']} unique_refused={result['refused_count']} "
+          f"raw_refusal_records={result['refused_records_count']} "
           f"tracked_admits={result['tracked_admission_count']} "
           f"schema_errors={len(result['problems'])}")
     if options.expect_incomplete:
