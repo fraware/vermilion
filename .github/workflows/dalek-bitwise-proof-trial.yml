@@ -124,9 +124,21 @@ jobs:
           source = json.loads(Path("case-studies/dalek-lite/generated/bit_lemmas.json").read_text())
           wanted = {"0a4e09fc4eccff1f", "635d62c1edcb1059"}
           matches = [o for o in source["obligations"] if o["statement_hash"] in wanted]
-          assert len(matches) == 2, f"Expected 2 exact historical proofs, got {len(matches)}"
+          print("FRESH_BITWISE_IDENTITIES:", [(o.get("name"), o.get("assert_id"), o.get("statement_hash")) for o in matches], flush=True)
+          assert len(matches) == 2, f"Expected exactly 2 matching source/hash obligations, got {len(matches)}"
           assert {m["statement_hash"] for m in matches} == wanted
-          assert all(m["assert_id"] == "bv_5_0" for m in matches)
+          assert all(str(m.get("assert_id", "")).startswith("bv_5_0") for m in matches), "unexpected fresh BV source IDs"
+          identities = {str(m["assert_id"]) for m in matches}
+          assert len(identities) == 2, "fresh generated AssertIds still collide"
+          receipt = {
+              "source": "pinned dalek-lite / bit_lemmas.rs",
+              "fresh_assert_ids": {m["statement_hash"]: m["assert_id"] for m in matches},
+              "historical_short_id": "bv_5_0",
+              "source_semantics_proved": False,
+              "historical_twin_reconciled": False
+          }
+          out=Path(".vermilion/bitwise-research/fresh-identity-map.json")
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\\n")
           print("TWO_HISTORICAL_STATEMENT_HASHES_MATCH_FRESH_GENERATION")
           PY
       - name: Compile complete original bit-lemmas twin with two migrated proofs
@@ -173,6 +185,7 @@ jobs:
             .vermilion/bitwise-research/original-specs.stdout
             .vermilion/bitwise-research/original-specs.stderr
             .vermilion/bitwise-research/integration-SHA256SUMS
+            .vermilion/bitwise-research/fresh-identity-map.json
           if-no-files-found: warn
           retention-days: 14
       - name: Preserve success or diagnostics
