@@ -138,7 +138,7 @@ jobs:
               "historical_twin_reconciled": False
           }
           out=Path(".vermilion/bitwise-research/fresh-identity-map.json")
-          out.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\\n")
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
           print("TWO_HISTORICAL_STATEMENT_HASHES_MATCH_FRESH_GENERATION")
           PY
       - name: Compile complete original bit-lemmas twin with two migrated proofs
