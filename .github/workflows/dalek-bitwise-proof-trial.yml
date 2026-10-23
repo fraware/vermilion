@@ -24,6 +24,8 @@ jobs:
       - name: Validate source-keyed proof extraction
         run: |
           python3 -m py_compile scripts/research_dalek_bitwise_proofs.py
+          python3 -m py_compile scripts/migrate_dalek_bitwise_twin.py
+          python3 -m unittest discover -s tests -p test_dalek_bitwise_twin_integration.py -v
           python3 scripts/research_dalek_bitwise_proofs.py --help
       - name: Install pinned Lean prerequisites
         run: |
@@ -88,6 +90,91 @@ jobs:
             .vermilion/bitwise-research/lean.stdout
           (cd .vermilion/bitwise-research && sha256sum * > SHA256SUMS)
           echo "TWO_BITWISE_ORIGINAL_SIGNATURES_KERNEL_CHECKED"
+      - name: Regenerate pinned Dalek bit-lemmas source and full unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          repository="$PWD"
+          ./case-studies/dalek-lite/fetch_upstream.sh
+          ./scripts/setup_verus.sh
+          source scripts/verus_env.sh
+          mkdir -p .vermilion/bitwise-research
+          rustup run "$verus_toolchain" rustc --edition=2021 \
+            --crate-name subtle --crate-type rlib \
+            case-studies/dalek-lite/subtle_stub.rs \
+            -o .vermilion/bitwise-research/libsubtle_stub.rlib
+          VERUS_VIR_EXPORT="$repository/.vermilion/bitwise-research/vir.bin" \
+            "$verus" case-studies/dalek-lite/layer_a.rs --crate-type=lib \
+            --extern "subtle=$repository/.vermilion/bitwise-research/libsubtle_stub.rlib" \
+            --no-verify \
+            > .vermilion/bitwise-research/frontend.stdout \
+            2> .vermilion/bitwise-research/frontend.stderr
+          ./crates/vermilion_direct/target/release/vermilion_direct \
+            .vermilion/bitwise-research/vir.bin \
+            --out .vermilion/bitwise-research/ir.sexp
+          source scripts/lean_env.sh
+          vrml_lake_build_if_stale vrml_gen Vermilion
+          ./.lake/build/bin/vrml_gen --mode per-function \
+            --generated-root case-studies/dalek-lite/generated \
+            .vermilion/bitwise-research/ir.sexp
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path("case-studies/dalek-lite/generated/bit_lemmas.json").read_text())
+          wanted = {"0a4e09fc4eccff1f", "635d62c1edcb1059"}
+          matches = [o for o in source["obligations"] if o["statement_hash"] in wanted]
+          assert len(matches) == 2, f"Expected 2 exact historical proofs, got {len(matches)}"
+          assert {m["statement_hash"] for m in matches} == wanted
+          assert all(m["assert_id"] == "bv_5_0" for m in matches)
+          print("TWO_HISTORICAL_STATEMENT_HASHES_MATCH_FRESH_GENERATION")
+          PY
+      - name: Compile complete original bit-lemmas twin with two migrated proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          evidence="$PWD/.vermilion/bitwise-research"
+          python3 scripts/migrate_dalek_bitwise_twin.py \
+            --output "$evidence/migrated-original-twin.lean" \
+            --receipt "$evidence/migrated-receipt.json"
+          source scripts/lean_env.sh
+          mkdir -p "$evidence/bit_lemmas"
+          cp case-studies/dalek-lite/generated/bit_lemmas/Specs.lean \
+             "$evidence/bit_lemmas/Specs.lean"
+          export LEAN_PATH="$evidence:$LEAN_PATH"
+          timeout 480s lean -o "$evidence/bit_lemmas/Specs.olean" \
+            "$evidence/bit_lemmas/Specs.lean" \
+            > "$evidence/original-specs.stdout" 2> "$evidence/original-specs.stderr"
+          test ! -s "$evidence/original-specs.stderr"
+          timeout 600s lean "$evidence/migrated-original-twin.lean" \
+            > "$evidence/migrated-twin.stdout" 2> "$evidence/migrated-twin.stderr"
+          test ! -s "$evidence/migrated-twin.stderr"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path(".vermilion/bitwise-research/migrated-receipt.json").read_text())
+          assert not report["whole_case_study_verified"]
+          assert report["full_twin_sync_and_kernel_acceptance_pending"]
+          print("COMPLETE_ORIGINAL_BIT_LEMMAS_UNIT_COMPILED_WITH_TWO_MIGRATED_PROOFS")
+          PY
+          (cd "$evidence" && sha256sum migrated-original-twin.lean \
+            migrated-receipt.json migrated-twin.stdout migrated-twin.stderr > integration-SHA256SUMS)
+      - name: Preserve original-unit integration evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-bitwise-full-unit-trial
+          path: |
+            .vermilion/bitwise-research/migrated-original-twin.lean
+            .vermilion/bitwise-research/migrated-receipt.json
+            .vermilion/bitwise-research/migrated-twin.stdout
+            .vermilion/bitwise-research/migrated-twin.stderr
+            .vermilion/bitwise-research/original-specs.stdout
+            .vermilion/bitwise-research/original-specs.stderr
+            .vermilion/bitwise-research/integration-SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 14
       - name: Preserve success or diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
