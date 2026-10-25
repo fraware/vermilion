@@ -16,7 +16,7 @@ if [[ -f "$fast_stamp" && "$fast_stamp" -nt "$0" \
   exit 0
 fi
 
-pin="48600836424a79420589c56d86e720236a029811"
+pin="4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
 # Our fork of verus-lang/verus (branch `dev`): upstream at the base
 # commit plus the VIR-export hook, the debug_assert-as-assert accommodation,
 # tuple-pattern function-parameter/contract lowering, general custom
@@ -28,13 +28,13 @@ pin="48600836424a79420589c56d86e720236a029811"
 # positive/negative regressions. Macro-expansion spans resolve to their
 # source call site (vermilion#44: `calc!` bodies otherwise carry vstd's
 # calc_macro.rs positions). It is a commit on that branch.
-verus_git="https://github.com/ilyasergey/verus.git"
+verus_git="https://github.com/fraware/verus.git"
 link="$repository/.verus-checkout"
 
 # The checkout must live outside the repository tree: a nested clone would be
 # captured by this workspace's Cargo.toml when building vargo. An existing
 # healthy link wins unless VERUS_CHECKOUT explicitly points elsewhere.
-default_checkout="${XDG_CACHE_HOME:-$HOME/.cache}/vermilion/verus"
+default_checkout="${XDG_CACHE_HOME:-$HOME/.cache}/vermilion/verus-cross-module-export-prototype"
 checkout_target="${VERUS_CHECKOUT:-$default_checkout}"
 if [[ -z "${VERUS_CHECKOUT:-}" && -d "$link/source" ]]; then
   checkout_target="$(cd "$link" && pwd -P)"
