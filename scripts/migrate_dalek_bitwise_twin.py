@@ -89,11 +89,12 @@ def migrate(source: str, fresh_ids: dict[str, str] | None = None) -> tuple[str, 
         new_id = fresh_ids[digest]
         if new_id != old_id:
             full_old = NAME
-            full_new = NAME.rsplit(".", 1)[0] + "." + new_id
+            theorem_leaf = "assert_" + new_id
+            full_new = NAME.rsplit(".", 1)[0] + "." + theorem_leaf
             edits = [
                 (full_old, full_new, 2),
-                ("def assert_bv_5_0_meta", "def " + new_id + "_meta", 1),
-                ("theorem assert_bv_5_0\n", "theorem " + new_id + "\n", 1),
+                ("def assert_bv_5_0_meta", "def " + theorem_leaf + "_meta", 1),
+                ("theorem assert_bv_5_0\n", "theorem " + theorem_leaf + "\n", 1),
                 ('assertId := "bv_5_0"', 'assertId := "' + new_id + '"', 1),
             ]
             for previous, replacement_name, occurrences in edits:
