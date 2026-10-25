@@ -1,0 +1,30 @@
+name: Dalek completeness guard
+
+on:
+  pull_request:
+    paths:
+      - scripts/check_dalek_completion.py
+      - tests/test_dalek_completion.py
+      - .github/workflows/dalek-completeness-guard.yml
+  push:
+    branches:
+      - contrib/dalek-completeness-gate-main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed-audit-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run negative and positive contract tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/check_dalek_completion.py
+          python3 -m unittest discover -s tests -p test_dalek_completion.py -v
+          python3 scripts/check_dalek_completion.py --help
