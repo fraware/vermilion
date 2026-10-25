@@ -74,6 +74,7 @@ namespace SeqLib
 /-- vstd spec fns of `vstd::seq_lib` with model definitions. -/
 def specFns : List (String × String) := [
   ("vstd::seq_lib::Seq::to_multiset", "Vermilion.Seq.toMultiset"),
+  ("vstd::seq_lib::Seq::map", "Vermilion.Seq.mapWithIndex"),
   ("vstd::seq_lib::Seq::contains", "Vermilion.Seq.contains"),
   ("vstd::seq_lib::Seq::drop_last", "Vermilion.Seq.dropLast"),
   ("vstd::seq_lib::Seq::drop_first", "Vermilion.Seq.dropFirst"),

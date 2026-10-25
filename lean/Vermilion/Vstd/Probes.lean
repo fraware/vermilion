@@ -16,3 +16,13 @@ open Lean Elab Command in
   for (path, name) in Vermilion.Vstd.specFnRegistry do
     unless env.contains name.toName do
       throwError "vstd mirror: `{path}` references unknown definition `{name}`"
+
+/- Regression: Verus Seq::map calls `f(index, element)`; ordinary
+element-only List.map would incorrectly produce [10, 20]. -/
+example :
+    Vermilion.Seq.mapWithIndex ([10, 20] : Vermilion.Seq Int)
+      (fun i x => i + x) = ([10, 21] : Vermilion.Seq Int) := by decide
+
+example :
+    Vermilion.Seq.mapWithIndex ([] : Vermilion.Seq Int)
+      (fun i x => i + x) = ([] : Vermilion.Seq Int) := by decide

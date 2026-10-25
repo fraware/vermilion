@@ -14,6 +14,14 @@ namespace Vermilion
 
 namespace Seq
 
+/-- Verus `vstd::seq_lib::Seq::map` supplies both the index and the
+element to the mapping function. Its pinned body is
+`Seq::new(self.len(), |i| f(i, self[i]))`. Using `List.map` here would
+lose the index and change the source specification. -/
+def mapWithIndex [Inhabited α] [Inhabited β]
+    (s : Seq α) (f : Int → α → β) : Seq β :=
+  new s.len (fun i => f i (s.index i))
+
 /-! ### The wider `vstd::seq`/`vstd::seq_lib` spec-fn surface
 
 Model definitions mirroring vstd's spec fns beyond the base operations,
