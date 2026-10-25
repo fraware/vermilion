@@ -13,7 +13,7 @@ private theorem ofInt_toNat8 (x : BitVec 8) : BitVec.ofInt 8 (x.toNat : Int) = x
 
 private theorem or_and_distrib8 (a b c : BitVec 8) :
     (a ||| b) &&& c = (a &&& c) ||| (b &&& c) := by
-  bv_decide
+  exact BitVec.and_or_distrib_right
 
 private theorem shl_and_shl_ne8 (p q : Nat) (hp : p < 8) (hq : q < 8) (hne : q ≠ p) :
     (1#8 <<< p) &&& (1#8 <<< q) = 0#8 := by
@@ -28,7 +28,11 @@ private theorem bv_or_and_ne8 (M V : BitVec 8) (p q : Nat) (hp : p < 8) (hq : q 
 
 private theorem bv_or_self_bit8 (M : BitVec 8) (p : Nat) (hp : p < 8) :
     ¬((M ||| 1#8 <<< p) &&& (1#8 <<< p) = 0#8) := by
-  interval_cases p <;> bv_decide
+  rw [BitVec.and_or_distrib_right, BitVec.and_self]
+  have hnonzero : (1#8 <<< p) ≠ 0#8 := by
+    interval_cases p <;> decide
+  intro h
+  exact hnonzero (BitVec.or_eq_zero_iff.mp h).2
 -- vrml:user:end
 
 -- vrml:user:begin
@@ -237,8 +241,25 @@ def assert_bv_5_0_meta : Vermilion.ObligationMeta := {
     (loop_0_iteration_6 : (val = 0) ∨ (val = 1))
     (loop_0_iteration_7 : (¬ (j = pos))) :
     Vermilion.Bits.band 8 (Vermilion.Bits.bor 8 mask (Vermilion.Bits.shl 8 val pos)) (Vermilion.Bits.shl 8 1 j) = Vermilion.Bits.band 8 mask (Vermilion.Bits.shl 8 1 j) := by
-  -- TODO(vermilion): automation failed; prove this obligation.
-  sorry
+  have hpos0 : 0 ≤ pos := by
+    unfold Vermilion.inUnsignedRange at loop_0_iteration_2
+    omega
+  have hj0 : 0 ≤ j := by
+    unfold Vermilion.inUnsignedRange at loop_0_iteration_3
+    omega
+  have hp : pos.toNat < 8 := by omega
+  have hq : j.toNat < 8 := by omega
+  have hne : j.toNat ≠ pos.toNat := by omega
+  have hv : BitVec.ofInt 8 val = 0#8 ∨ BitVec.ofInt 8 val = 1#8 := by
+    rcases loop_0_iteration_6 with h | h
+    · left; simp [h]
+    · right; simp [h]
+  have h := bv_or_and_ne8 (BitVec.ofInt 8 mask) (BitVec.ofInt 8 val)
+    pos.toNat j.toNat hp hq hne hv
+  have hone : BitVec.ofInt 8 1 = 1#8 := by decide
+  simpa only [Vermilion.Bits.band, Vermilion.Bits.bor,
+    Vermilion.Bits.shl, ofInt_toNat8, hone] using
+      congrArg (fun (v : BitVec 8) => (v.toNat : Int)) h
 -- vrml:end layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_bv_5_0
 
 -- vrml:begin layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_4 7746682377557c8c
@@ -419,27 +440,27 @@ def assert_7_meta : Vermilion.ObligationMeta := {
   vrml [layer_a.specs.field_specs.sum_of_limbs_bounded, layer_a.backend.serial.u64.field.impl__5.add_req, vstd.arithmetic.power2.pow2, layer_a.specs.field_specs_u64.u64_5_as_nat, layer_a.specs.field_specs.spec_add_fe51_limbs, layer_a.specs.field_specs_u64.p, layer_a.specs.field_specs_u64.field_canonical, layer_a.specs.field_specs_u64.u64_5_as_field_canonical, layer_a.specs.field_specs.fe51_as_canonical_nat, layer_a.specs.field_specs.field_add, layer_a.backend.serial.u64.field.impl__5.obeys_add_spec, layer_a.backend.serial.u64.field.impl__5.add_spec, layer_a.specs.field_specs.fe51_as_nat, layer_a.specs.field_specs.u64_5_bounded, layer_a.specs.field_specs.fe51_limbs_bounded, layer_a.specs.field_specs_u64.mask51, layer_a.specs.field_specs_u64.spec_reduce, layer_a.backend.serial.u64.field.LOW_51_BIT_MASK, layer_a.backend.serial.u64.field.impl__8.sub_req, layer_a.specs.field_specs.field_sub, layer_a.backend.serial.u64.field.impl__8.obeys_sub_spec, layer_a.specs.field_specs.spec_sub_limbs, layer_a.backend.serial.u64.field.impl__8.sub_spec, layer_a.backend.serial.u64.field.impl__11.mul_req, layer_a.lemmas.field_lemmas.mul_lemmas.mul_term_product_bounds_spec, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c0_0_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c1_0_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c2_0_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c3_0_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c4_0_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_ci_0_val_boundaries, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c0_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c1_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c2_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c3_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_c4_val, layer_a.lemmas.field_lemmas.mul_lemmas.mul_ci_val_boundaries, layer_a.lemmas.field_lemmas.mul_lemmas.mul_out_val_boundaries, layer_a.lemmas.field_lemmas.mul_lemmas.mul_return, layer_a.lemmas.field_lemmas.mul_lemmas.mul_boundary_spec, layer_a.specs.field_specs.field_mul, layer_a.backend.serial.u64.field.impl__11.obeys_mul_spec, layer_a.backend.serial.u64.field.impl__11.mul_spec, layer_a.lemmas.field_lemmas.negate_lemmas.all_neg_limbs_positive, layer_a.specs.field_specs_u64.sixteen_p_vec, layer_a.specs.field_specs_u64.pre_reduce_limbs, layer_a.specs.field_specs_u64.spec_negate, layer_a.backend.serial.u64.field.impl__13.neg_req, layer_a.specs.field_specs.field_neg, layer_a.backend.serial.u64.field.impl__13.obeys_neg_spec, layer_a.backend.serial.u64.field.impl__13.neg_spec, vstd.slice.len_returns_clause_autospec, layer_a.specs.core_specs.spec_load8_at, layer_a.specs.core_specs.u8_32_as_nat, layer_a.specs.field_specs_u64.compute_q_arr, layer_a.specs.field_specs_u64.compute_unmasked_limbs, layer_a.specs.field_specs_u64.compute_q_spec, layer_a.specs.field_specs_u64.reduce_with_q_spec, layer_a.specs.field_specs_u64.bit_arrange, layer_a.lemmas.field_lemmas.limbs_to_bytes_lemmas.bytes_match_limbs_packing, layer_a.lemmas.field_lemmas.pow2k_lemmas.term_product_bounds_spec, layer_a.lemmas.field_lemmas.pow2k_lemmas.c0_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c1_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c2_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c3_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c4_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.ci_0_val_boundaries, layer_a.lemmas.field_lemmas.pow2k_lemmas.c0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c1_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c2_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c3_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.c4_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.ci_val_boundaries, layer_a.lemmas.field_lemmas.pow2k_lemmas.a0_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.a1_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.a2_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.a3_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.a4_0_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.carry_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.a0_1_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.a0_2_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.ai_val_boundaries, layer_a.lemmas.field_lemmas.pow2k_lemmas.a1_1_val, layer_a.lemmas.field_lemmas.pow2k_lemmas.pow2k_loop_return, layer_a.lemmas.field_lemmas.pow2k_lemmas.pow2k_loop_boundary_spec, vstd.bits.low_bits_mask, layer_a.specs.primality_specs.is_prime, layer_a.lemmas.common_lemmas.number_theory_lemmas.spec_mod_inverse, layer_a.specs.core_specs.word64_from_bytes, layer_a.specs.edwards_specs.edwards_x, layer_a.specs.edwards_specs.edwards_y, layer_a.specs.edwards_specs.edwards_z, layer_a.specs.edwards_specs.edwards_t, layer_a.specs.edwards_specs.edwards_point_limbs_bounded, layer_a.specs.field_specs.spec_fe51_as_bytes, layer_a.core_assumes.seq_from32, layer_a.specs.field_specs.as_bytes_post, layer_a.specs.field_specs.from_bytes_post, layer_a.core_assumes.seq_to_array_32, layer_a.specs.field_specs.field_element_from_bytes, layer_a.lemmas.field_lemmas.limbs_to_bytes_lemmas.limb0_byte_contribution, layer_a.lemmas.field_lemmas.limbs_to_bytes_lemmas.limb1_byte_contribution, layer_a.lemmas.field_lemmas.limbs_to_bytes_lemmas.limb2_byte_contribution, layer_a.lemmas.field_lemmas.limbs_to_bytes_lemmas.limb3_byte_contribution, layer_a.lemmas.field_lemmas.limbs_to_bytes_lemmas.limb4_byte_contribution, layer_a.lemmas.field_lemmas.load8_lemmas.pow2_mul_div_mod_small_mul_u8_t51_cond, layer_a.lemmas.field_lemmas.load8_lemmas.pow2_mul_div_mod_small_div_u8_t51_cond, layer_a.lemmas.field_lemmas.load8_lemmas.pow2_mul_div_mod_close_mod_u8_t51_cond, layer_a.lemmas.field_lemmas.load8_lemmas.pow2_mul_div_mod_small_mod_u8_t51_cond, layer_a.specs.field_specs.field_inv, layer_a.specs.field_specs.field_square, layer_a.constants.SQRT_M1, layer_a.specs.field_specs.sqrt_m1, layer_a.specs.field_specs.is_negative, layer_a.specs.field_specs.nat_invsqrt, layer_a.specs.field_specs.field_abs, layer_a.specs.scalar52_specs.group_order]
 -- vrml:end layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_7
 
--- vrml:begin layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_bv_5_0 635d62c1edcb1059
+-- vrml:begin layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_bv_5_0_1 635d62c1edcb1059
 /--
-Generated VC `layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_bv_5_0`.
+Generated VC `layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_bv_5_0_1`.
 
 - Rust source: `case-studies/dalek-lite/upstream/curve25519-dalek/src/lemmas/common_lemmas/bit_lemmas.rs:149:16-150:20`
 - Rust/SST construct: bit-vector assertion (`by (bit_vector)`)
 - AssertId: `bv_5_0`
 - Statement hash: `635d62c1edcb1059`
 -/
-def assert_bv_5_0_meta : Vermilion.ObligationMeta := {
+def assert_bv_5_0_1_meta : Vermilion.ObligationMeta := {
   rustFile := "case-studies/dalek-lite/upstream/curve25519-dalek/src/lemmas/common_lemmas/bit_lemmas.rs"
   startLine := 149
   startColumn := 16
   endLine := 150
   endColumn := 20
-  assertId := "bv_5_0"
+  assertId := "bv_5_0_1"
   functionName := "layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit"
   kind := "assert"
   statementHash := "635d62c1edcb1059"
 }
-@[vrml_obligation] theorem assert_bv_5_0
+@[vrml_obligation] theorem assert_bv_5_0_1
     (mask : Int)
     (val : Int)
     (pos : Int)
@@ -453,9 +474,33 @@ def assert_bv_5_0_meta : Vermilion.ObligationMeta := {
     (loop_1_iteration_6 : (val = 0) ∨ (val = 1))
     (loop_1_iteration_7 : j = pos) :
     (¬ (Vermilion.Bits.band 8 (Vermilion.Bits.bor 8 mask (Vermilion.Bits.shl 8 val pos)) (Vermilion.Bits.shl 8 1 j) = 0)) ↔ ((¬ (Vermilion.Bits.band 8 mask (Vermilion.Bits.shl 8 1 j) = 0)) ∨ (val = 1)) := by
-  -- TODO(vermilion): automation failed; prove this obligation.
-  sorry
--- vrml:end layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_bv_5_0
+  have hpos0 : 0 ≤ pos := by
+    unfold Vermilion.inUnsignedRange at loop_1_iteration_2
+    omega
+  have hp : pos.toNat < 8 := by omega
+  have hposition : j = pos := loop_1_iteration_7
+  subst j
+  rcases loop_1_iteration_6 with hzero | hone
+  · subst val
+    simp only [Vermilion.Bits.band, Vermilion.Bits.bor,
+      Vermilion.Bits.shl, ofInt_toNat8] at ⊢
+    simp
+  · subst val
+    have h := bv_or_self_bit8 (BitVec.ofInt 8 mask) pos.toNat hp
+    have hone : BitVec.ofInt 8 1 = 1#8 := by decide
+    have hleft :
+        ¬ (Vermilion.Bits.band 8
+          (Vermilion.Bits.bor 8 mask (Vermilion.Bits.shl 8 1 pos))
+          (Vermilion.Bits.shl 8 1 pos) = 0) := by
+      simp only [Vermilion.Bits.band, Vermilion.Bits.bor,
+        Vermilion.Bits.shl, ofInt_toNat8, hone]
+      intro hz
+      apply h
+      apply BitVec.toNat_inj.mp
+      norm_num
+      exact_mod_cast hz
+    simp [hleft]
+-- vrml:end layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.assert_bv_5_0_1
 
 -- vrml:begin layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit.ensures_8_0 a48f84a71ef13d95
 /--

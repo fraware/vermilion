@@ -2,8 +2,8 @@
 """Migrate only two source-hash-keyed theorem proofs into a COPY of the tracked twin.
 
 The source file, original assertion metadata, theorem headers, every other
-proof obligation, and the historical short-ID collision wrapper remain
-untouched. The output is an integration experiment, not a verified full-cone
+proof obligation, and historical proof annotations remain
+untouched, except for the second freshly disambiguated identifier. The output is an integration experiment, not a verified full-cone
 proof or a replacement for fresh manifest/twin reconciliation.
 """
 import argparse
@@ -30,7 +30,15 @@ HELPER_CHANGE = [
 ]
 
 
-def migrate(source: str) -> tuple[str, dict]:
+def migrate(source: str, fresh_ids: dict[str, str] | None = None) -> tuple[str, dict]:
+    expected = {
+        "0a4e09fc4eccff1f": "bv_5_0",
+        "635d62c1edcb1059": "bv_5_0_1",
+    }
+    if fresh_ids is None:
+        fresh_ids = expected.copy()
+    if fresh_ids != expected:
+        raise ValueError("fresh generator assertion IDs changed; aborting migration")
     if source.count("namespace collision_635d62c1") != 1:
         raise ValueError("historical assertion-ID collision namespace drift")
     if source.count("end collision_635d62c1") != 1:
@@ -77,12 +85,34 @@ def migrate(source: str) -> tuple[str, dict]:
         if body != ADMISSION_BODY:
             raise ValueError(f"expected exactly one tracked admission at {digest}")
         replacement = header + proof.strip("\n") + "\n"
-        output = output[:mark.start()] + replacement + output[end_at:]
+        old_id = "bv_5_0"
+        new_id = fresh_ids[digest]
+        if new_id != old_id:
+            full_old = NAME
+            theorem_leaf = "assert_" + new_id
+            full_new = NAME.rsplit(".", 1)[0] + "." + theorem_leaf
+            edits = [
+                (full_old, full_new, 2),
+                ("def assert_bv_5_0_meta", "def " + theorem_leaf + "_meta", 1),
+                ("theorem assert_bv_5_0\n", "theorem " + theorem_leaf + "\n", 1),
+                ('assertId := "bv_5_0"', 'assertId := "' + new_id + '"', 1),
+            ]
+            for previous, replacement_name, occurrences in edits:
+                if replacement.count(previous) != occurrences:
+                    raise ValueError("unexpected source-keyed name drift: " + previous)
+                replacement = replacement.replace(previous, replacement_name)
+            target_end_marker = "-- vrml:end " + full_new
+        else:
+            target_end_marker = end_marker
+        output = (output[:mark.start()] + replacement + target_end_marker +
+                  output[end_at + len(end_marker):])
         receipts.append({
             "hash": digest, "label": label,
             "original_theorem_header_sha256": hashlib.sha256(header.encode()).hexdigest(),
             "original_proof_body_sha256": hashlib.sha256(body.encode()).hexdigest(),
-            "replaced_only_proof_body": True,
+            "replaced_proof_body": True,
+            "fresh_assert_id": new_id,
+            "metadata_and_name_reconciled": new_id != old_id,
         })
     if len(receipts) != 2:
         raise ValueError("expected exactly two migrated proofs")
@@ -100,6 +130,7 @@ def migrate(source: str) -> tuple[str, dict]:
         "migrated_obligations": receipts,
         "whole_case_study_verified": False,
         "full_twin_sync_and_kernel_acceptance_pending": True,
+        "fresh_id_mapping": fresh_ids,
     }
 
 
@@ -108,8 +139,13 @@ def main():
     parser.add_argument("--source", type=Path, default=SOURCE)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--identity-map", type=Path, required=True)
     args = parser.parse_args()
-    migrated, receipt = migrate(args.source.read_text(encoding="utf-8"))
+    identities = json.loads(args.identity_map.read_text(encoding="utf-8"))
+    if identities.get("historical_twin_reconciled") is not False:
+        raise ValueError("unexpected historical identity receipt")
+    migrated, receipt = migrate(args.source.read_text(encoding="utf-8"),
+                                identities.get("fresh_assert_ids"))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(migrated, encoding="utf-8")

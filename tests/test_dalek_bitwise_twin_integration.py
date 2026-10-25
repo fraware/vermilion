@@ -17,11 +17,24 @@ class TwinIntegrationTests(unittest.TestCase):
         for digest, _ in ORIGINAL:
             self.assertEqual(updated.count('statementHash := "' + digest + '"'), 1)
         self.assertEqual(updated.count("namespace collision_635d62c1"), 1)
+        self.assertEqual(updated.count("def assert_bv_5_0_meta"), 1)
+        self.assertEqual(updated.count("def assert_bv_5_0_1_meta"), 1)
+        self.assertEqual(updated.count("theorem assert_bv_5_0\n"), 1)
+        self.assertEqual(updated.count("theorem assert_bv_5_0_1\n"), 1)
+        self.assertEqual(receipt["fresh_id_mapping"]["635d62c1edcb1059"], "bv_5_0_1")
+        self.assertEqual(updated.count("  sorry\n"), self.source.count("  sorry\n") - 2)
 
     def test_original_is_never_modified(self):
         before = SOURCE.read_bytes()
         migrate(self.source)
         self.assertEqual(before, SOURCE.read_bytes())
+
+    def test_changed_fresh_name_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "fresh generator assertion IDs changed"):
+            migrate(self.source, {
+                "0a4e09fc4eccff1f": "bv_5_0",
+                "635d62c1edcb1059": "bv_5_0",
+            })
 
     def test_wrong_hash_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "historical source hash"):
