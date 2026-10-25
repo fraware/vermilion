@@ -81,8 +81,31 @@ and rejected a false one in
 The stricter clean-host acceptance adds a source-free fresh GitHub runner,
 artifact SHA-256 validation, independent host toolchain provisioning, and
 native valid/invalid verification from the downloaded archive.
-A completed, successful clean-host result is necessary before publishing
-this artifact as independently installable.
+**This acceptance passed** in
+[run 39543571463](https://github.com/fraware/vermilion/actions/runs/39543571463)
+on the clean-host native SDK branch at
+`1c195df9c1fd8e9b29f5d2f8f3d3335d29da8ce0`.
+Its three jobs passed: package integrity and client contracts; relocated
+native verification; and archive-only verification on a clean Ubuntu
+runner without a Vermilion source checkout. The last job accepted a valid
+two-obligation contract and rejected a deliberately false contract.
+
+At the time of verification, the workflow artifacts were scheduled to
+expire on **November 4, 2026 (UTC)**. The packaged
+`linux-x86_64-native-sdk-alpha` artifact was **2,020,229,219 bytes**
+(as reported by GitHub's artifact metadata); this is not the unpacked
+runtime size. No durable public SDK release is established by this run.
+The tested artifact archive has a `SHA256SUMS` file covering the archive
+and wheel. The internal SDK manifest hashes selected critical files only,
+not every transitive precompiled runtime file. Verifying the archive
+checksum before extraction is necessary for the documented distribution
+integrity check.
+
+The upstream [standalone acceptance issue #50](https://github.com/ilyasergey/vermilion/issues/50)
+also calls for reproducible, relocated **representative case studies**
+with unchanged verdicts, emitted modules, statement hashes, and twin
+reconciliation. This broader criterion is not completed by the present
+single-source positive/negative clean-host acceptance.
 
 The pinning and compiler safeguards are evidence for the tested cases,
 not a universal soundness theorem. The trusted Rust-to-Lean translation,
