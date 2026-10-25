@@ -26,6 +26,9 @@ jobs:
         run: |
           python3 -m py_compile scripts/research_dalek_bitwise_proofs.py
           python3 -m py_compile scripts/migrate_dalek_bitwise_twin.py
+          printf '%s  %s\n' \
+            b4bdf5bf258f2ac20667f896b9a94d640f061ae295e43632acaa113aa23eaf82 \
+            tests/fixtures/dalek-lemma_or_bit-historical.lean | sha256sum -c -
           python3 -m unittest discover -s tests -p test_dalek_bitwise_twin_integration.py -v
           python3 scripts/research_dalek_bitwise_proofs.py --help
       - name: Install pinned Lean prerequisites

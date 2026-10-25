@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-SOURCE = Path("case-studies/dalek-lite/proofs/bit_lemmas/layer_a_lemmas_common_lemmas_bit_lemmas_lemma_or_bit.lean")
+SOURCE = Path("tests/fixtures/dalek-lemma_or_bit-historical.lean")
 ORIGINAL = [
     ("0a4e09fc4eccff1f", "nonoverlap"),
     ("635d62c1edcb1059", "same_position"),
