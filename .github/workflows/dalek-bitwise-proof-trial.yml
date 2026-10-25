@@ -185,6 +185,54 @@ jobs:
           PY
           (cd "$evidence" && sha256sum migrated-original-twin.lean \
             migrated-receipt.json migrated-twin.stdout migrated-twin.stderr > integration-SHA256SUMS)
+      - name: Verify fresh source-keyed full lemma_or_bit unit and remaining blockers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          manifest = json.loads(Path("case-studies/dalek-lite/generated/bit_lemmas.json").read_text())
+          unit_prefix = "layer_a.lemmas.common_lemmas.bit_lemmas.lemma_or_bit."
+          records = [r for r in manifest["obligations"] if r["name"].startswith(unit_prefix)]
+          assert len(records) >= 10, "missing expected lemma_or_bit obligation cone"
+          expected = {r["name"]: r["statement_hash"] for r in records}
+          assert len(expected) == len(records), "generated identities collide"
+          twin = Path("case-studies/dalek-lite/proofs/bit_lemmas/layer_a_lemmas_common_lemmas_bit_lemmas_lemma_or_bit.lean").read_text()
+          markers = re.findall(r"(?m)^-- vrml:begin (\S+) ([0-9a-f]{16})\s*$", twin)
+          matching = [(n, h) for n, h in markers if n.startswith(unit_prefix)]
+          actual = dict(matching)
+          assert len(actual) == len(matching), "tracked theorem identities collide"
+          assert actual == expected, "generated source/hash mapping disagrees with tracked full unit"
+          assert not re.search(r"(?m)^\s*(sorry|admit)\s*$", twin), "admission in tracked unit"
+          assert expected[unit_prefix+"assert_bv_5_0"] == "0a4e09fc4eccff1f"
+          assert expected[unit_prefix+"assert_bv_5_0_1"] == "635d62c1edcb1059"
+          receipt = {
+            "status": "ONE_TRACKED_UNIT_SOURCE_HASH_FRESH_AND_NATIVE_COMPILED",
+            "unit": unit_prefix.rstrip("."),
+            "obligations": len(records),
+            "full_dalek_verified": False,
+          }
+          out = Path(".vermilion/bitwise-research/unit-source-hash-receipt.json")
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2)+"\n")
+          print(receipt)
+          PY
+          python3 scripts/check_dalek_completion.py \
+            --generated case-studies/dalek-lite/generated \
+            --proofs case-studies/dalek-lite/proofs \
+            --report-json .vermilion/bitwise-research/remaining-cone.json \
+            --expect-incomplete
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path(".vermilion/bitwise-research/remaining-cone.json").read_text())
+          assert report["refused_count"] == 38
+          assert report["tracked_admission_count"] == 6
+          assert report["manifest_count"] == 27
+          assert report["obligation_count"] == 5215
+          assert report["accepted"] is False
+          print("FULL_CONE_STILL_INCOMPLETE: 38 REFUSALS, 6 TRACKED ADMISSIONS")
+          PY
       - name: Preserve original-unit integration evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -199,6 +247,8 @@ jobs:
             .vermilion/bitwise-research/original-specs.stderr
             .vermilion/bitwise-research/integration-SHA256SUMS
             .vermilion/bitwise-research/fresh-identity-map.json
+            .vermilion/bitwise-research/unit-source-hash-receipt.json
+            .vermilion/bitwise-research/remaining-cone.json
           if-no-files-found: warn
           retention-days: 14
       - name: Preserve success or diagnostics
