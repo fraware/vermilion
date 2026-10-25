@@ -161,7 +161,9 @@ jobs:
             "$evidence/bit_lemmas/Specs.lean" \
             > "$evidence/original-specs.stdout" 2> "$evidence/original-specs.stderr"
           test ! -s "$evidence/original-specs.stderr"
-          timeout 600s lean "$evidence/migrated-original-twin.lean" \
+          cmp "$evidence/migrated-original-twin.lean" \
+            case-studies/dalek-lite/proofs/bit_lemmas/layer_a_lemmas_common_lemmas_bit_lemmas_lemma_or_bit.lean
+          timeout 600s lean case-studies/dalek-lite/proofs/bit_lemmas/layer_a_lemmas_common_lemmas_bit_lemmas_lemma_or_bit.lean \
             > "$evidence/migrated-twin.stdout" 2> "$evidence/migrated-twin.stderr"
           test ! -s "$evidence/migrated-twin.stderr"
           python3 - <<'PY'
