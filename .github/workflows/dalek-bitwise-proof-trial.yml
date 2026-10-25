@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - research/dalek-bitwise-proof-trial
+      - research/dalek-bitwise-full-unit-20261025
   workflow_dispatch:
 
 permissions:
@@ -149,7 +150,8 @@ jobs:
           evidence="$PWD/.vermilion/bitwise-research"
           python3 scripts/migrate_dalek_bitwise_twin.py \
             --output "$evidence/migrated-original-twin.lean" \
-            --receipt "$evidence/migrated-receipt.json"
+            --receipt "$evidence/migrated-receipt.json" \
+            --identity-map "$evidence/fresh-identity-map.json"
           source scripts/lean_env.sh
           mkdir -p "$evidence/bit_lemmas"
           cp case-studies/dalek-lite/generated/bit_lemmas/Specs.lean \
@@ -168,6 +170,12 @@ jobs:
           report=json.loads(Path(".vermilion/bitwise-research/migrated-receipt.json").read_text())
           assert not report["whole_case_study_verified"]
           assert report["full_twin_sync_and_kernel_acceptance_pending"]
+          assert report["fresh_id_mapping"]["635d62c1edcb1059"] == "bv_5_0_1"
+          source=Path(".vermilion/bitwise-research/migrated-original-twin.lean").read_text()
+          assert source.count("def assert_bv_5_0_meta") == 1
+          assert source.count("def assert_bv_5_0_1_meta") == 1
+          assert source.count("theorem assert_bv_5_0\n") == 1
+          assert source.count("theorem assert_bv_5_0_1\n") == 1
           print("COMPLETE_ORIGINAL_BIT_LEMMAS_UNIT_COMPILED_WITH_TWO_MIGRATED_PROOFS")
           PY
           (cd "$evidence" && sha256sum migrated-original-twin.lean \
