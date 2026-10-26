@@ -5581,7 +5581,38 @@ impl Lowering<'_> {
                         root.0, EXPR_SUBSTITUTION_BUDGET
                     ));
                 }
-                self.env.insert(root, value);
+                // Research-only structural sharing for a sequence-element
+                // assignment.  A fresh, typed symbol plus its defining
+                // equation is logically equivalent to substituting the
+                // functional update into all subsequent obligations:
+                //
+                //   ∀ next, next = update(current, index, rhs) → P(next)
+                //       ↔ P(update(current, index, rhs)).
+                //
+                // This prevents repeated indexed writes from embedding each
+                // previous sequence tree in the next write. Do not change the
+                // default lowering until native differential and case-study
+                // comparison, including statement-hash migration, is complete.
+                let share_index_assignment =
+                    std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
+                    && matches!(path.as_slice(), [DestProj::Index(_)])
+                    && self.loop_frames.is_empty();
+                if share_index_assignment {
+                    let root_type = self.var_types.get(&root).cloned().ok_or_else(|| {
+                        format!("SSA indexed update lacks original root type for `{}`", root.0)
+                    })?;
+                    let name = self.fresh_binder_name(&format!("{}_ssa", root.0));
+                    let binder = Binder::new(name.clone(), binder_type(self.ctx, &root_type)?);
+                    self.statements.push(Statement::Fresh(binder));
+                    self.statements.push(Statement::Assume(Expr::binary(
+                        BinOp::Eq,
+                        Expr::Var(name.clone()),
+                        value,
+                    )));
+                    self.env.insert(root, Expr::Var(name));
+                } else {
+                    self.env.insert(root, value);
+                }
             }
             StmX::If(cond, then_stm, else_stm) => {
                 self.branch(cond, then_stm, else_stm.as_ref())?;
