@@ -59,6 +59,17 @@ jobs:
           key: native-v3-\${{ runner.os }}-\${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
           restore-keys: |
             native-v3-\${{ runner.os }}-
+      - name: Ensure cached Verus checkout contains exact research pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
+          cached="${HOME}/.cache/vermilion/verus"
+          if [[ -d "$cached/.git" ]]; then
+            git -C "$cached" fetch --no-tags https://github.com/fraware/verus.git "$pin"
+            git -C "$cached" cat-file -e "$pin^{commit}"
+            echo "PINNED_VERUS_OBJECT_PRESENT $pin"
+          fi
       - name: Build pinned Rust adapter and Lean generator
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
