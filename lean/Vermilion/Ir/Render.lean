@@ -409,7 +409,11 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
   -- `termination_by` from the Verus-checked decreases measures.
   let recursive := specFn.isRecursive
   let propDec := specFn.needsPropDecidable
-  let classical := specFn.body.needsClassical || forceClassical || propDec
+  -- Cross-module recursive specs carry range guards including predicates
+  -- supplied as opaque/revealed Verus definitions. Their Decidable instances
+  -- may be unavailable even when the original body needs no classical choice.
+  -- The guard is a Prop in Lean and its branching semantics remains the same.
+  let classical := recursive || specFn.body.needsClassical || forceClassical || propDec
   let mut out := ""
   -- Navigation marker: the editor's Lean→Rust jump (⌘⇧J) reads the
   -- definition's source position from this line.
@@ -487,7 +491,8 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
     out := out ++
       "decreasing_by all_goals first | omega | (simp_all; omega) | \
 (simp_all; exact ⟨Int.emod_lt_of_pos _ (by omega), by omega⟩) | \
-(simp_all [Vermilion.iteP]; split_ifs <;> omega) | simp_all\n"
+(simp_all [Vermilion.iteP]; split_ifs <;> omega) | \
+(simp_all [Vermilion.Seq.subrange, Vermilion.Seq.len, List.length_take, List.length_drop] <;> omega) | simp_all\n"
   return out
 
 /-- Header of every generated module: imports plus linter silencing.
