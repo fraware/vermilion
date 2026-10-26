@@ -491,6 +491,7 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
     out := out ++
       "decreasing_by all_goals first | \
 (exact Vermilion.Seq.tail_subrange_strict _ (by omega)) | \
+(solve | simp_all <;> (first | exact Vermilion.Seq.tail_subrange_strict _ (by omega) | omega)) | \
 (solve | omega) | (solve | simp_all; omega) | \
 (solve | simp_all; exact ⟨Int.emod_lt_of_pos _ (by omega), by omega⟩) | \
 (solve | simp_all [Vermilion.iteP]; split_ifs <;> omega) | \
