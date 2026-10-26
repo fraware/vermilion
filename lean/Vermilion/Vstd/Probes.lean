@@ -26,3 +26,8 @@ example :
 example :
     Vermilion.Seq.mapWithIndex ([] : Vermilion.Seq Int)
       (fun i x => i + x) = ([] : Vermilion.Seq Int) := by decide
+
+/- Kernel-checked recursive subrange-tail decrease used by dalek load8. -/
+example (xs : Vermilion.Seq Int) (h : xs.len ≠ 0) :
+    (xs.subrange 1 xs.len).len < xs.len :=
+  Vermilion.Seq.tail_subrange_strict xs h
