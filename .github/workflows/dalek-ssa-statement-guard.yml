@@ -1,0 +1,29 @@
+name: Pinned SSA VC statement reconciliation
+
+on:
+  push:
+    branches:
+      - audit/dalek-ssa-statement-stability-20261026
+  pull_request:
+    paths:
+      - scripts/check_dalek_ssa_stability.py
+      - tests/test_dalek_ssa_stability.py
+      - .github/workflows/dalek-ssa-statement-guard.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compile checker and run adversarial contract tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/check_dalek_ssa_stability.py
+          python3 -m unittest discover -s tests -p test_dalek_ssa_stability.py -v
