@@ -12,11 +12,27 @@ repository="$(cd "$(dirname "$0")/.." && pwd)"
 # to still be healthy. (Delete .vermilion/setup-verus-ok to force a recheck.)
 fast_stamp="$repository/.vermilion/setup-verus-ok"
 if [[ -f "$fast_stamp" && "$fast_stamp" -nt "$0" \
-  && -x "$repository/.verus-checkout/source/target-verus/release/rust_verify" ]]; then
+  && -x "$repository/.verus-checkout/source/target-verus/release/rust_verify" \
+  && "$(git -C "$repository/.verus-checkout" rev-parse HEAD 2>/dev/null || true)" == "$pin" \
+  && "$(cat "$repository/.verus-checkout/source/target-verus/.vermilion-built-pin" 2>/dev/null || true)" == "$pin" ]]; then
   exit 0
 fi
 
-pin="4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
+# The published/default setup stays on the established Verus pin. The
+# cross-module export experiment is enabled only by an explicit exact pin.
+pin="48600836424a79420589c56d86e720236a029811"
+verus_git="https://github.com/ilyasergey/verus.git"
+case "${VERMILION_RESEARCH_VERUS_PIN:-}" in
+  "") ;;
+  "4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248")
+    pin="4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
+    verus_git="https://github.com/fraware/verus.git"
+    ;;
+  *)
+    echo "error: unsupported experimental Verus revision" >&2
+    exit 2
+    ;;
+esac
 # Our fork of verus-lang/verus (branch `dev`): upstream at the base
 # commit plus the VIR-export hook, the debug_assert-as-assert accommodation,
 # tuple-pattern function-parameter/contract lowering, general custom
@@ -28,7 +44,6 @@ pin="4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
 # positive/negative regressions. Macro-expansion spans resolve to their
 # source call site (vermilion#44: `calc!` bodies otherwise carry vstd's
 # calc_macro.rs positions). It is a commit on that branch.
-verus_git="https://github.com/fraware/verus.git"
 link="$repository/.verus-checkout"
 
 # The checkout must live outside the repository tree: a nested clone would be
