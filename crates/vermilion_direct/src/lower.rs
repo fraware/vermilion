@@ -1614,6 +1614,35 @@ mod capture_avoiding_binder_tests {
     }
 
     #[test]
+    fn index_ssa_avoids_lean_normalization_collisions() {
+        // Each raw spelling normalizes to a distinct occupied candidate.
+        // Source-name collisions must not be introduced in generated Lean.
+        let occupied = HashSet::from([
+            "bytes-ssa".to_owned(),
+            "bytes.ssa_2".to_owned(),
+            "bytes%ssa_3".to_owned(),
+        ]);
+        let mut used = Vec::new();
+        assert_eq!(
+            fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied),
+            "bytes_ssa_4"
+        );
+        assert_eq!(
+            fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied),
+            "bytes_ssa_5"
+        );
+    }
+
+    #[test]
+    fn index_ssa_name_matches_lean_segment_conventions() {
+        assert_eq!(indexed_ssa_lean_segment("a-b"), "a_b");
+        assert_eq!(indexed_ssa_lean_segment("a.b"), "a_b");
+        assert_eq!(indexed_ssa_lean_segment("from"), "from_");
+        assert_eq!(indexed_ssa_lean_segment("9data"), "_9data");
+        assert_eq!(indexed_ssa_lean_segment(""), "_anonymous");
+    }
+
+    #[test]
     fn index_ssa_reserves_future_source_identifier() {
         // Source symbols introduced after the update are still reserved.
         // A symbolic equation using this fresh name would otherwise mask
@@ -3606,22 +3635,59 @@ struct LoopFrame {
     continue_sites: usize,
 }
 
-/// The opt-in SSA binder must be fresh relative to both generated binders
-/// and symbolic source values used by its defining equation. Reserve the
-/// selected name for subsequent allocations. No global allocator behavior
-/// changes for the nonexperimental lowering path.
+/// Keep the experimental SSA name check aligned with Lean's
+/// `leanSegment` renderer (lean/Vermilion/Ir/Ast.lean). Comparing raw
+/// identifiers is insufficient: `bytes-ssa` and `bytes_ssa` render
+/// as the same Lean binder. Preserve the keyword-suffix convention too.
+fn indexed_ssa_lean_segment(raw: &str) -> String {
+    let sanitized: String = raw
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .collect();
+    let prefixed = if raw.chars().next().is_some_and(|c| c.is_numeric()) {
+        format!("_{sanitized}")
+    } else {
+        sanitized
+    };
+    if prefixed.is_empty() {
+        return "_anonymous".to_owned();
+    }
+    const LEAN_RESERVED: &[&str] = &[
+        "end", "by", "do", "from", "with", "then", "else", "show",
+        "have", "let", "fun", "match", "where", "calc", "at", "in",
+        "open", "section", "namespace", "variable", "example",
+        "theorem", "def", "deriving", "instance", "class", "structure",
+        "inductive", "abbrev", "axiom", "mutual", "macro", "notation",
+        "attribute", "if",
+    ];
+    if LEAN_RESERVED.contains(&prefixed.as_str()) {
+        format!("{prefixed}_")
+    } else {
+        prefixed
+    }
+}
+
+/// The opt-in SSA binder must be fresh after Lean identifier normalization
+/// relative to both generated binders and symbolic source values used by
+/// its defining equation. Reserve the selected name for later allocations.
+/// Leave the production allocator unchanged.
 fn fresh_indexed_ssa_name(
     base: &str,
     used: &mut Vec<String>,
     occupied: &std::collections::HashSet<String>,
 ) -> String {
-    let base: String = base
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+    let base = indexed_ssa_lean_segment(base);
+    let occupied_rendered: std::collections::HashSet<String> = occupied
+        .iter()
+        .map(|name| indexed_ssa_lean_segment(name))
+        .collect();
+    let used_rendered: std::collections::HashSet<String> = used
+        .iter()
+        .map(|name| indexed_ssa_lean_segment(name))
         .collect();
     let mut candidate = base.clone();
     let mut suffix = 1usize;
-    while occupied.contains(&candidate) || used.iter().any(|name| name == &candidate) {
+    while occupied_rendered.contains(&candidate) || used_rendered.contains(&candidate) {
         suffix += 1;
         candidate = format!("{base}_{suffix}");
     }
