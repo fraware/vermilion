@@ -166,6 +166,46 @@ jobs:
                   copied.add(source)
           print(f"Preserved {len(copied)} unsimplified Lean modules")
           PY
+      - name: Kernel-elaborate recovered recursive specification modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          source scripts/lean_env.sh
+          evidence="$PWD/.vermilion/dalek-provenance"
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          file=Path("case-studies/dalek-lite/generated/load8_lemmas/Specs.lean")
+          content=file.read_text()
+          match=re.search(r"(?m)^(?:noncomputable )?def \S*load8_at_or_version_rec\b",content)
+          assert match, ("Expected cross-module recursive spec definition absent",file)
+          suffix=content[match.end():].split("\n-- vrml:spec ",1)[0]
+          assert "termination_by " in suffix, (
+              "Recovered recursive spec missing a native Lean termination proof",file)
+          print("RECURSIVE_SPEC_DEFINITION_AND_TERMINATION_PRESENT",file)
+          PY
+          for stem in load8_lemmas to_nat_lemmas as_bytes_lemmas field_u64; do
+            file="case-studies/dalek-lite/generated/$stem/Specs.lean"
+            test -s "$file"
+            timeout --signal=TERM --kill-after=5s 240s lean -o "$evidence/$stem-Specs.olean" "$file" \
+              > "$evidence/$stem-specs.stdout" 2> "$evidence/$stem-specs.stderr"
+            test ! -s "$evidence/$stem-specs.stderr"
+            echo "KERNEL_ELABORATED_RECURSIVE_SPECS $stem"
+          done
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          stems=["load8_lemmas","to_nat_lemmas","as_bytes_lemmas","field_u64"]
+          digests={}
+          for stem in stems:
+            file=Path(f"case-studies/dalek-lite/generated/{stem}/Specs.lean")
+            digests[stem]=hashlib.sha256(file.read_bytes()).hexdigest()
+          out=Path(".vermilion/dalek-provenance/recursive-spec-kernel-audit.json")
+          out.write_text(json.dumps({"spec_sha256":digests,
+             "native_lean_elaborated":True,
+             "whole_case_study_verified":False},indent=2,sort_keys=True)+"\n")
+          PY
       - name: Fail-closed audit of cross-module recursive export
         shell: bash
         run: |
@@ -280,6 +320,9 @@ jobs:
           name: cross-module-decreases-export-experiment
           path: |
             .vermilion/dalek-provenance/recursive-export-experiment.json
+            .vermilion/dalek-provenance/recursive-spec-kernel-audit.json
+            .vermilion/dalek-provenance/*-specs.stdout
+            .vermilion/dalek-provenance/*-specs.stderr
             .vermilion/dalek-provenance/experimental-vcs.json
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
