@@ -489,11 +489,12 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
     -- `b`; and a `natClip`ped measure (`binomial (natClip (n-1)) …`)
     -- surfaces an `iteP` the ladder splits before finishing with `omega`.
     out := out ++
-      "decreasing_by all_goals first | omega | (simp_all; omega) | \
-(simp_all; exact ⟨Int.emod_lt_of_pos _ (by omega), by omega⟩) | \
-(simp_all [Vermilion.iteP]; split_ifs <;> omega) | \
-(apply Vermilion.Seq.tail_subrange_strict; omega) | \
-(simp_all [Vermilion.Seq.subrange, Vermilion.Seq.len, List.length_take, List.length_drop] <;> omega) | simp_all\n"
+      "decreasing_by all_goals first | \
+(exact Vermilion.Seq.tail_subrange_strict _ (by omega)) | \
+(solve | omega) | (solve | simp_all; omega) | \
+(solve | simp_all; exact ⟨Int.emod_lt_of_pos _ (by omega), by omega⟩) | \
+(solve | simp_all [Vermilion.iteP]; split_ifs <;> omega) | \
+(solve | simp_all [Vermilion.Seq.subrange, Vermilion.Seq.len, List.length_take, List.length_drop] <;> omega) | simp_all\n"
   return out
 
 /-- Header of every generated module: imports plus linter silencing.
