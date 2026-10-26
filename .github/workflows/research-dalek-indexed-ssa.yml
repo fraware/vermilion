@@ -87,7 +87,7 @@ jobs:
           repository="$PWD"
           source scripts/verus_env.sh
           ( cd crates/vermilion_direct &&
-            rustup run "$verus_toolchain" cargo test --locked               index_ssa_fresh_name_excludes_symbolic_assignment_inputs )
+            rustup run "$verus_toolchain" cargo test --locked index_ssa_ )
           echo "SSA_SYMBOLIC_FRESHNESS_REGRESSION_PASSED"
       - name: Kernel-check indexed SSA defining-equation rule
         shell: bash
