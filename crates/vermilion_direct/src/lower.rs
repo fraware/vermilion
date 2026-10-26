@@ -1614,6 +1614,18 @@ mod capture_avoiding_binder_tests {
     }
 
     #[test]
+    fn index_ssa_reserves_future_source_identifier() {
+        // Source symbols introduced after the update are still reserved.
+        // A symbolic equation using this fresh name would otherwise mask
+        // the distinct future source identifier.
+        let mut used = Vec::new();
+        let occupied = HashSet::from(["bytes_ssa".to_owned()]);
+        let name = fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied);
+        assert_eq!(name, "bytes_ssa_2");
+        assert_ne!(name, "bytes_ssa");
+    }
+
+    #[test]
     fn nested_choose_and_lambda_names_are_reserved() {
         let e = Expr::Lambda(
             vec![Binder::new("j", Ty::Int)],
@@ -3551,6 +3563,10 @@ struct Lowering<'a> {
     /// Opt-in indexed SSA is scoped to the one unacquired dalek function.
     /// Other functions must remain bit-for-bit statement-hash stable.
     ssa_indexed_as_bytes: bool,
+    /// Names in the entire checked SST body and its contracts: an identifier
+    /// introduced later must not capture an SSA value introduced earlier.
+    /// Populated only for the exact opt-in dalek-lite function.
+    ssa_source_names: std::collections::HashSet<String>,
     statements: Vec<Statement>,
     post_dest: Option<VarIdent>,
     post_exps: Vec<Exp>,
@@ -5652,6 +5668,7 @@ impl Lowering<'_> {
                     // values already present in the assignment and current
                     // environment. Include registry-held prophecy symbols.
                     let mut occupied = binding_occupied_names(self.ctx, &self.env);
+                    occupied.extend(self.ssa_source_names.iter().cloned());
                     reserve_expr_names(&value, &mut occupied);
                     let name = fresh_indexed_ssa_name(
                         &format!("{}_ssa", root.0),
@@ -6323,10 +6340,42 @@ fn function_view_impl(
             source_path, ssa_indexed_as_bytes
         );
     }
+    // Preserve source identifiers across the WHOLE selected SST function.
+    // Looking only at the current symbolic environment misses locals that
+    // appear later; choosing one of their names for a fresh SSA variable
+    // would incorrectly conflate two distinct program values.
+    // Existing exhaustive expression/statement visitors are reused, and
+    // nonexperimental functions pay no additional traversal cost.
+    let mut ssa_source_names = std::collections::HashSet::<String>::new();
+    if ssa_indexed_as_bytes {
+        let mut reserve_exp = |exp: &Exp| {
+            exp_visit_vars(exp, &mut |ident| {
+                ssa_source_names.insert(ident.0.to_string());
+            });
+        };
+        stm_visit_exps(&check.body, &mut reserve_exp);
+        for statement in check.local_decls_decreases_init.iter() {
+            stm_visit_exps(statement, &mut reserve_exp);
+        }
+        for expression in check.reqs.iter().chain(check.post_condition.ens_exps.iter()) {
+            reserve_exp(expression);
+        }
+        drop(reserve_exp);
+        for parameter in function.x.pars.iter() {
+            ssa_source_names.insert(parameter.x.name.0.to_string());
+        }
+        if let Some(destination) = &check.post_condition.dest {
+            ssa_source_names.insert(destination.0.to_string());
+        }
+        for parameter in function.x.typ_params.iter() {
+            ssa_source_names.insert(parameter.to_string());
+        }
+    }
     let mut lowering = Lowering {
         env: Env::new(),
         ctx,
         ssa_indexed_as_bytes,
+        ssa_source_names,
         statements: Vec::new(),
         post_dest: check.post_condition.dest.clone(),
         post_exps: check.post_condition.ens_exps.iter().cloned().collect(),
