@@ -99,6 +99,9 @@ jobs:
           repository="$PWD"
           source scripts/verus_env.sh
           ( cd crates/vermilion_direct && rustup run "$verus_toolchain" cargo test )
+          # Exercise the native checker, including evidence-section scope
+          # handling for mutually recursive generated specifications.
+          rustup run "$verus_toolchain" cargo test -p vermilion_backend --bin vrml_check
       - name: Verify independent capture cases — per function
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
