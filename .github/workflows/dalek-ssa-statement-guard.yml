@@ -3,6 +3,7 @@ name: Pinned SSA VC statement reconciliation
 on:
   push:
     branches:
+      - main
       - audit/dalek-ssa-statement-stability-20261026
   pull_request:
     paths:
