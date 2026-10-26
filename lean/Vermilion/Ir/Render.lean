@@ -393,7 +393,8 @@ visibility channel, so a hidden (`#[verifier::opaque]`, un-`reveal`ed)
 definition stays invisible to every ladder rung, matching Verus's
 verdicts. The simp equation applied through the list is the
 per-occurrence ground defining equation of the no-fuel design. -/
-def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
+def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false)
+    (inMutual : Bool := false) :
     String := Id.run do
   -- `noncomputable` only when the body forces it (a possibly-zero
   -- `ediv`/`emod`) — otherwise generated code stays plain (user directive
@@ -437,7 +438,9 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
       out := out ++ s!" ({leanSegment binder.name} : {binder.ty.render})"
     out := out ++ s!" : {specFn.ret.render}\n"
     return out
-  if (recursive && classical) || propDec then
+  -- A mutual block shares one section-scoped Classical instance. A command-
+  -- scoped `open Classical in` per definition is invalid inside the block.
+  if !inMutual && ((recursive && classical) || propDec) then
     out := out ++ "open Classical in\n"
   let marker := if classical then "noncomputable def" else "def"
   out := out ++ s!"{marker} {specFn.id.qualified}"
@@ -566,10 +569,13 @@ def renderSpecsSection (datatypes : Array DataView) (specFns : Array SpecFn) :
       let specFn := specFns[group[0]!]!
       out := out ++ renderSpecFn specFn (force specFn) ++ "\n"
     else
-      out := out ++ "mutual\n"
+      -- The `mutual` elaborator expects a contiguous group of definitions.
+      -- Scope the classical Decidable fallback around the whole group;
+      -- declaration names and the generated VC statements remain unchanged.
+      out := out ++ "section\nopen Classical\nmutual\n"
       for j in group do
-        out := out ++ renderSpecFn specFns[j]! (force specFns[j]!) ++ "\n"
-      out := out ++ "end\n\n"
+        out := out ++ renderSpecFn specFns[j]! (force specFns[j]!) true ++ "\n"
+      out := out ++ "end\nend\n\n"
   return out
 
 /-- Append namespace-wrapped obligation blocks (contiguous per function) to
