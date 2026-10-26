@@ -6251,13 +6251,26 @@ fn function_view_impl(
         format!("function {} has no exec proof check", segments.join("::"))
     })?;
 
+    // The SST function path may carry the synthetic layer_a crate as a
+    // leading *path segment* (CrateId::Internal prints as "crate").
+    // Match the exact Verus function path instead of reconstructing it
+    // from a presumed crate name. This avoids changing unrelated `mul` VCs.
+    let source_path = function.x.name.path.segments.iter()
+        .map(|s| s.as_str()).collect::<Vec<_>>().join(".");
     let ssa_indexed_as_bytes =
         std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
-        && id.crate_name == "layer_a"
-        && id.modules.iter().map(String::as_str).eq([
-            "backend", "serial", "u64", "field", "impl__16",
-        ])
-        && id.name == "as_bytes";
+        && (
+            source_path == "layer_a.backend.serial.u64.field.impl__16.as_bytes"
+            || source_path == "backend.serial.u64.field.impl__16.as_bytes"
+        );
+    if std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
+        && id.name == "as_bytes" {
+        eprintln!(
+            "VRML_SSA_TARGET_DIAGNOSTIC crate={} modules={} name={} source_path={} selected={}",
+            id.crate_name, id.modules.join("."), id.name,
+            source_path, ssa_indexed_as_bytes
+        );
+    }
     let mut lowering = Lowering {
         env: Env::new(),
         ctx,
