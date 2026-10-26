@@ -1596,6 +1596,28 @@ mod capture_avoiding_binder_tests {
     }
 
     #[test]
+    fn index_ssa_fresh_name_excludes_symbolic_assignment_inputs() {
+        // This models a symbolic old-sequence value and RHS that happen to
+        // share the candidate SSA spelling; the chosen binder must differ.
+        let mut occupied = HashSet::new();
+        reserve_expr_names(&Expr::Var("bytes_ssa".into()), &mut occupied);
+        reserve_expr_names(&Expr::Var("bytes_ssa_2".into()), &mut occupied);
+        let mut used = vec!["bytes_ssa_3".to_owned()];
+        let next = {
+            let mut suffix = 1usize;
+            let mut candidate = "bytes_ssa".to_owned();
+            while occupied.contains(&candidate) || used.contains(&candidate) {
+                suffix += 1;
+                candidate = format!("bytes_ssa_{suffix}");
+            }
+            used.push(candidate.clone());
+            candidate
+        };
+        assert_eq!(next, "bytes_ssa_4");
+        assert!(!occupied.contains(&next));
+    }
+
+    #[test]
     fn nested_choose_and_lambda_names_are_reserved() {
         let e = Expr::Lambda(
             vec![Binder::new("j", Ty::Int)],
@@ -3594,6 +3616,23 @@ impl Lowering<'_> {
         }
         self.used_binder_names.push(candidate.clone());
         candidate
+    }
+
+    /// SSA binders must also avoid names in symbolic source expressions.
+    /// Colliding with an unregistered source symbol could change
+    /// `next = update(old, i, x)` into a self-referential assumption.
+    /// Preserve the default name allocator unchanged outside the opt-in path.
+    fn fresh_ssa_binder_name(
+        &mut self,
+        base: &str,
+        occupied: &std::collections::HashSet<String>,
+    ) -> String {
+        loop {
+            let candidate = self.fresh_binder_name(base);
+            if !occupied.contains(&candidate) {
+                return candidate;
+            }
+        }
     }
 
     /// The fresh post-state symbol standing for the resolved prophecy of the
@@ -5606,7 +5645,14 @@ impl Lowering<'_> {
                     let root_type = self.var_types.get(&root).cloned().ok_or_else(|| {
                         format!("SSA indexed update lacks original root type for `{}`", root.0)
                     })?;
-                    let name = self.fresh_binder_name(&format!("{}_ssa", root.0));
+                    // A fresh equation is equivalent to substitution only
+                    // when the new binder is disjoint from all symbolic
+                    // values already present in the assignment and current
+                    // environment. Include registry-held prophecy symbols.
+                    let mut occupied = binding_occupied_names(self.ctx, &self.env);
+                    reserve_expr_names(&value, &mut occupied);
+                    let name = self.fresh_ssa_binder_name(
+                        &format!("{}_ssa", root.0), &occupied);
                     let binder = Binder::new(name.clone(), binder_type(self.ctx, &root_type)?);
                     self.statements.push(Statement::Fresh(binder));
                     self.statements.push(Statement::Assume(Expr::binary(
