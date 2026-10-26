@@ -182,6 +182,15 @@ def subrange (xs : Seq α) (i j : Int) : Seq α :=
   simp only [subrange, List.length_take, List.length_drop]
   omega
 
+/-- A nonempty sequence strictly shrinks when its first element is removed.
+This is the direct termination fact for Verus's recursive subrange tail. -/
+theorem tail_subrange_strict (s : Seq α) (h : s.len ≠ 0) :
+    (s.subrange 1 s.len).len < s.len := by
+  have hn : 0 ≤ s.len := len_nonneg s
+  have h1 : 1 ≤ s.len := by omega
+  rw [len_subrange s 1 s.len (by omega) h1 (by omega)]
+  omega
+
 /-- Reading position `k` of a subrange reads position `i + k` of the whole. -/
 @[simp] theorem index_subrange [Inhabited α] (xs : Seq α) (i j k : Int)
     (low : 0 ≤ i) (klow : 0 ≤ k) (khigh : k < j - i) :
