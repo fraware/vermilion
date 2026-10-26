@@ -318,6 +318,25 @@ jobs:
           print("EXPERIMENTAL_EXPORT_OBLIGATIONS",len(obligations),
                 "RECOVERED_FUNCTIONS",len(recovered),"REFUSALS",len(refused))
           PY
+      - name: Fail-closed exact-statement reconciliation against 5835-VC control
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_dalek_ssa_stability.py -v
+          python3 scripts/check_dalek_ssa_stability.py \
+            .vermilion/dalek-provenance/experimental-vcs.json
+            .vermilion/dalek-provenance/ssa-reconciliation.json \
+            --output .vermilion/dalek-provenance/ssa-reconciliation.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          audit=json.loads(Path(".vermilion/dalek-provenance/ssa-reconciliation.json").read_text())
+          assert audit["preexisting_vcs_exactly_preserved"]==5835
+          assert audit["as_bytes_new_vcs"]==156, audit
+          assert audit["total_vcs"]==5991, audit
+          assert audit["whole_case_study_verified"] is False
+          print("SSA_5835_EXISTING_VCS_UNCHANGED_156_NEW_AS_BYTES_VCS",audit)
+          PY
       - name: Preserve native export experiment evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
