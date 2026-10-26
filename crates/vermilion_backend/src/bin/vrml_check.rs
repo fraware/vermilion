@@ -758,7 +758,7 @@ mod delta_scope_regressions {
             namespace A.check\nend A.check\n";
         let (delta, records) = delta_module(generated, &[]);
         assert!(records.is_empty());
-        assert_eq!(delta.matches("\nend\n").count(), 2);
+        assert_eq!(delta.lines().filter(|line| *line == "end").count(), 2);
         assert!(delta.ends_with("end\nend\n"));
     }
 
@@ -772,7 +772,7 @@ mod delta_scope_regressions {
         let (delta, records) = delta_module(generated, &[]);
         assert!(records.is_empty());
         assert!(delta.ends_with("end\n"));
-        assert_eq!(delta.matches("\nend\n").count(), 1);
+        assert_eq!(delta.lines().filter(|line| *line == "end").count(), 1);
     }
 
     #[test]
@@ -784,7 +784,7 @@ mod delta_scope_regressions {
               sorry\nnamespace A.check\nend A.check\n";
         let (delta, records) = delta_module(generated, &[]);
         assert!(records.is_empty());
-        assert_eq!(delta.matches("\nend\n").count(), 3);
+        assert_eq!(delta.lines().filter(|line| *line == "end").count(), 3);
         assert!(delta.ends_with("end\n"));
     }
 }
