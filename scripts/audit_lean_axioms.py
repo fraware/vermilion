@@ -33,7 +33,7 @@ run_cmd do
     | none => throwError m!"VRML_AXIOM_AUDIT_MISSING {n}"
     let axioms ← Lean.collectAxioms n
     for ax in axioms do
-      unless ax == \`propext || ax == \`Classical.choice || ax == \`Quot.sound do
+      unless ax == `propext || ax == `Classical.choice || ax == `Quot.sound do
         throwError m!"VRML_AXIOM_AUDIT_FORBIDDEN {n}: {ax}"
   logInfo m!"VRML_AXIOM_AUDIT_PASS {names.size}"
 """ % literals
