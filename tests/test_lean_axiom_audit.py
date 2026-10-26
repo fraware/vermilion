@@ -54,6 +54,44 @@ class LeanAxiomTests(unittest.TestCase):
         accepted, _ = self.audit("def constant : Nat := 1\n", ["constant"])
         self.assertFalse(accepted)
 
+
+    def test_full_acceptance_contract_safe_and_custom_axiom(self):
+        import json
+        from check_dalek_completion import complete
+        root = Path(self.temp.name)
+        generated = root / "generated"
+        proofs = root / "proofs"
+        (generated / "core").mkdir(parents=True)
+        (proofs / "core").mkdir(parents=True)
+        unit = "namespace core\n theorem x : True := by trivial\nend core\n"
+        (generated / "core" / "unit.lean").write_text(unit)
+        target = proofs / "core" / "unit.lean"
+        target.write_text(unit)
+        manifest = {"mode": "per-function",
+                    "obligations": [{"name": "core.x", "statement_hash": "0123456789abcdef",
+                                     "lean_file": str(generated / "core" / "unit.lean")}],
+                    "refused": []}
+        (generated / "core.json").write_text(json.dumps(manifest))
+        checker = root / "checker"
+        probe = root / "probe"
+        for command in (checker, probe):
+            command.write_text("#!/bin/sh\nexit 0\n")
+            command.chmod(0o755)
+        result = complete(generated, proofs, checker, probe)
+        self.assertTrue(result["accepted"], result["problems"])
+        self.assertTrue(result["kernel_checked"])
+        self.assertTrue(result["axiom_dependencies_audited"])
+        self.assertEqual(result["axiom_audited_units"], 1)
+        self.assertEqual(result["status"], "ALL_GENERATED_TWINS_NATIVE_AND_AXIOMS_CHECKED")
+
+        target.write_text("axiom poison : False\n"
+                          "namespace core\n theorem x : True := False.elim poison\nend core\n")
+        result = complete(generated, proofs, checker, probe)
+        self.assertFalse(result["accepted"])
+        self.assertTrue(result["kernel_checked"])
+        self.assertFalse(result["axiom_dependencies_audited"])
+        self.assertTrue(any("axiom audit" in p for p in result["problems"]))
+
     def test_injection_and_empty_lists_rejected(self):
         for names in ([], ["bad); #eval 42"], ["x", "x"]):
             with self.subTest(names=names), self.assertRaises(ValueError):

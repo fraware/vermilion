@@ -11,6 +11,7 @@ on:
       - .github/workflows/dalek-completeness-guard.yml
   push:
     branches:
+      - main
       - contrib/dalek-completeness-gate-main
   workflow_dispatch:
 
