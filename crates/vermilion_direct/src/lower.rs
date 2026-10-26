@@ -3530,6 +3530,9 @@ fn fun_display_name(fun: &vir::ast::Fun) -> String {
 struct Lowering<'a> {
     env: Env,
     ctx: ExpCtx<'a>,
+    /// Opt-in indexed SSA is scoped to the one unacquired dalek function.
+    /// Other functions must remain bit-for-bit statement-hash stable.
+    ssa_indexed_as_bytes: bool,
     statements: Vec<Statement>,
     post_dest: Option<VarIdent>,
     post_exps: Vec<Exp>,
@@ -5589,12 +5592,14 @@ impl Lowering<'_> {
                 //   ∀ next, next = update(current, index, rhs) → P(next)
                 //       ↔ P(update(current, index, rhs)).
                 //
+                // Only the exact dalek-lite as_bytes function is eligible,
+                // safeguarding every existing obligation outside that scope.
                 // This prevents repeated indexed writes from embedding each
                 // previous sequence tree in the next write. Do not change the
                 // default lowering until native differential and case-study
                 // comparison, including statement-hash migration, is complete.
                 let share_index_assignment =
-                    std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
+                    self.ssa_indexed_as_bytes
                     && matches!(path.as_slice(), [DestProj::Index(_)])
                     && self.loop_frames.is_empty();
                 if share_index_assignment {
@@ -6246,9 +6251,17 @@ fn function_view_impl(
         format!("function {} has no exec proof check", segments.join("::"))
     })?;
 
+    let ssa_indexed_as_bytes =
+        std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
+        && id.crate_name == "layer_a"
+        && id.modules.iter().map(String::as_str).eq([
+            "backend", "serial", "u64", "field", "impl__16",
+        ])
+        && id.name == "as_bytes";
     let mut lowering = Lowering {
         env: Env::new(),
         ctx,
+        ssa_indexed_as_bytes,
         statements: Vec::new(),
         post_dest: check.post_condition.dest.clone(),
         post_exps: check.post_condition.ens_exps.iter().cloned().collect(),
