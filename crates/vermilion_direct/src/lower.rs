@@ -1603,18 +1603,14 @@ mod capture_avoiding_binder_tests {
         reserve_expr_names(&Expr::Var("bytes_ssa".into()), &mut occupied);
         reserve_expr_names(&Expr::Var("bytes_ssa_2".into()), &mut occupied);
         let mut used = vec!["bytes_ssa_3".to_owned()];
-        let next = {
-            let mut suffix = 1usize;
-            let mut candidate = "bytes_ssa".to_owned();
-            while occupied.contains(&candidate) || used.contains(&candidate) {
-                suffix += 1;
-                candidate = format!("bytes_ssa_{suffix}");
-            }
-            used.push(candidate.clone());
-            candidate
-        };
+        let next = fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied);
         assert_eq!(next, "bytes_ssa_4");
+        assert_eq!(used.last().map(String::as_str), Some("bytes_ssa_4"));
         assert!(!occupied.contains(&next));
+        assert_eq!(
+            fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied),
+            "bytes_ssa_5"
+        );
     }
 
     #[test]
@@ -3594,6 +3590,29 @@ struct LoopFrame {
     continue_sites: usize,
 }
 
+/// The opt-in SSA binder must be fresh relative to both generated binders
+/// and symbolic source values used by its defining equation. Reserve the
+/// selected name for subsequent allocations. No global allocator behavior
+/// changes for the nonexperimental lowering path.
+fn fresh_indexed_ssa_name(
+    base: &str,
+    used: &mut Vec<String>,
+    occupied: &std::collections::HashSet<String>,
+) -> String {
+    let base: String = base
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .collect();
+    let mut candidate = base.clone();
+    let mut suffix = 1usize;
+    while occupied.contains(&candidate) || used.iter().any(|name| name == &candidate) {
+        suffix += 1;
+        candidate = format!("{base}_{suffix}");
+    }
+    used.push(candidate.clone());
+    candidate
+}
+
 impl Lowering<'_> {
     /// Pick a fresh Lean binder name for a call result, keeping the Rust
     /// variable name when it is free.
@@ -3616,23 +3635,6 @@ impl Lowering<'_> {
         }
         self.used_binder_names.push(candidate.clone());
         candidate
-    }
-
-    /// SSA binders must also avoid names in symbolic source expressions.
-    /// Colliding with an unregistered source symbol could change
-    /// `next = update(old, i, x)` into a self-referential assumption.
-    /// Preserve the default name allocator unchanged outside the opt-in path.
-    fn fresh_ssa_binder_name(
-        &mut self,
-        base: &str,
-        occupied: &std::collections::HashSet<String>,
-    ) -> String {
-        loop {
-            let candidate = self.fresh_binder_name(base);
-            if !occupied.contains(&candidate) {
-                return candidate;
-            }
-        }
     }
 
     /// The fresh post-state symbol standing for the resolved prophecy of the
@@ -5651,8 +5653,11 @@ impl Lowering<'_> {
                     // environment. Include registry-held prophecy symbols.
                     let mut occupied = binding_occupied_names(self.ctx, &self.env);
                     reserve_expr_names(&value, &mut occupied);
-                    let name = self.fresh_ssa_binder_name(
-                        &format!("{}_ssa", root.0), &occupied);
+                    let name = fresh_indexed_ssa_name(
+                        &format!("{}_ssa", root.0),
+                        &mut self.used_binder_names,
+                        &occupied,
+                    );
                     let binder = Binder::new(name.clone(), binder_type(self.ctx, &root_type)?);
                     self.statements.push(Statement::Fresh(binder));
                     self.statements.push(Statement::Assume(Expr::binary(
