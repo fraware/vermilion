@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Fail-closed dalek-lite full-cone acceptance; negative-control mode is NOT proof.
+"""Fail-closed dalek-lite full-cone audit; negative-control mode is not proof.
 
-A source-to-Lean proof requires a fresh manifest set, no refused functions,
-no 'sorry' / 'admit' in tracked twin files, and independent successful
-vrml_check --twin-check on *every* manifest. Do not equate an isolated
-six- or two-theorem research certificate with this acceptance gate.
+Full acceptance requires fresh manifests, no refusals, no tracked admissions,
+native proof-twin checks, and a declaration-level Lean axiom-dependency audit.
+The latter is not yet available: a clean native run remains INCOMPLETE.
 """
 from __future__ import annotations
 import argparse
@@ -14,11 +13,12 @@ import re
 import subprocess
 import sys
 
-ADMIT = re.compile(r"(?m)^\s*(?:sorry|admit)\s*(?:--[^\n]*)?$")
+from lean_admission_scan import admission_positions
 
 
 def audit(generated: Path, proofs: Path) -> dict:
-    result = dict(accepted=False, kernel_checked=False, status="INCOMPLETE",
+    result = dict(accepted=False, kernel_checked=False, axiom_dependencies_audited=False,
+                  status="INCOMPLETE",
                   manifest_count=0, obligation_count=0, refused_count=0, refused_records_count=0,
                   tracked_admission_count=0, refused_functions=[],
                   tracked_admissions=[], problems=[])
@@ -98,11 +98,17 @@ def audit(generated: Path, proofs: Path) -> dict:
         except OSError as err:
             result["problems"].append(f"unreadable proof twin {proof}: {err}")
             continue
-        for marker in ADMIT.finditer(source):
+        try:
+            admissions = admission_positions(source)
+        except ValueError as error:
+            result["problems"].append(f"cannot scan Lean proof {proof}: {error}")
+            continue
+        for line, token in admissions:
             result["tracked_admission_count"] += 1
             result["tracked_admissions"].append({
                 "path": str(proof),
-                "line": source.count("\n", 0, marker.start()) + 1,
+                "line": line,
+                "token": token,
             })
     return result
 
@@ -142,9 +148,15 @@ def complete(generated: Path, proofs: Path, checker: Path | None,
                 f"native twin failure at {manifest}: exit={verdict.returncode}; stderr={verdict.stderr[:1000]}"
             )
             return result
-    result["accepted"] = True
+    # Lean accepts 'sorry' and axioms as proof terms; an exit-0 native
+    # checker alone cannot certify the absence of unacceptable dependencies.
+    # Retain its receipt but FAIL CLOSED until a declaration-level axiom audit
+    # is implemented and independently validated.
     result["kernel_checked"] = True
-    result["status"] = "ALL_GENERATED_TWINS_NATIVE_CHECKED"
+    result["status"] = "NATIVE_TWINS_CHECKED_AXIOM_AUDIT_PENDING"
+    result["problems"].append(
+        "full acceptance requires an independent Lean theorem axiom-dependency audit"
+    )
     return result
 
 

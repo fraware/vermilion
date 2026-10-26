@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - scripts/check_dalek_completion.py
+      - scripts/lean_admission_scan.py
       - tests/test_dalek_completion.py
       - .github/workflows/dalek-completeness-guard.yml
   push:
@@ -25,6 +26,6 @@ jobs:
       - name: Run negative and positive contract tests
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/check_dalek_completion.py
+          python3 -m py_compile scripts/check_dalek_completion.py scripts/lean_admission_scan.py
           python3 -m unittest discover -s tests -p test_dalek_completion.py -v
           python3 scripts/check_dalek_completion.py --help

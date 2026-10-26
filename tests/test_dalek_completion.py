@@ -47,6 +47,38 @@ class FullConeTests(unittest.TestCase):
         self.twin.write_text("theorem x : True := by\n  sorry\n")
         self.assertEqual(audit(self.generated, self.proofs)["tracked_admission_count"], 1)
 
+    def test_inline_and_tactic_admissions_fail_closed(self):
+        cases = [
+            "theorem x : True := by sorry",
+            "theorem x : True := by\n  exact sorry",
+            "theorem x : True := by admit",
+            "theorem x : True := by\n  exact Lean.sorryAx _ _",
+        ]
+        for source in cases:
+            with self.subTest(source=source):
+                self.twin.write_text(source)
+                result = audit(self.generated, self.proofs)
+                self.assertEqual(result["tracked_admission_count"], 1)
+                self.assertFalse(result["accepted"])
+
+    def test_comments_and_string_literals_are_ignored(self):
+        self.twin.write_text(
+            '/-! A nested example /- sorry and admit -/ of proof terminology -/\n'
+            'def explanation : String := "sorry in documentation"\n'
+            'theorem x : True := by\n'
+            '  -- admit is deliberately discussed here\n'
+            '  trivial\n'
+        )
+        result = audit(self.generated, self.proofs)
+        self.assertEqual(result["tracked_admission_count"], 0)
+        self.assertFalse(result["problems"])
+
+    def test_malformed_block_comment_fails_closed(self):
+        self.twin.write_text("theorem x : True := by trivial\n/- unfinished")
+        result = audit(self.generated, self.proofs)
+        self.assertTrue(result["problems"])
+        self.assertFalse(result["accepted"])
+
     def test_missing_manifest_fails_closed(self):
         self.manifest.unlink()
         self.assertTrue(audit(self.generated, self.proofs)["problems"])
@@ -83,8 +115,10 @@ class FullConeTests(unittest.TestCase):
         probe.write_text('#!/bin/sh\n[ "$2" = "--probe" ] || exit 5\nexit 0\n')
         probe.chmod(0o755)
         result = complete(self.generated, self.proofs, checker, probe)
-        self.assertTrue(result["accepted"])
+        self.assertFalse(result["accepted"])
         self.assertTrue(result["kernel_checked"])
+        self.assertFalse(result["axiom_dependencies_audited"])
+        self.assertIn("AXIOM_AUDIT_PENDING", result["status"])
 
     def test_unverified_freshness_fails(self):
         checker = self.root / "checker"
