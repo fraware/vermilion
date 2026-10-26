@@ -261,6 +261,13 @@ jobs:
             "recovered_obligations_by_function":recovered,
             "remaining_refused":refused,
             "whole_case_study_verified":False}
+          details=Path(".vermilion/dalek-provenance/experimental-vcs.json")
+          details.write_text(json.dumps({
+            "verus_sha":"4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248",
+            "source_sha":"de9ebf01599fedbbced28b938e2c36c538fe4ae5",
+            "source_keyed_obligations":obligations,
+            "refused_functions":refused,
+            "whole_case_study_verified":False},sort_keys=True,indent=2)+"\n")
           out=Path(".vermilion/dalek-provenance/recursive-export-experiment.json")
           out.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
           print("EXPERIMENTAL_EXPORT_OBLIGATIONS",len(obligations),
@@ -273,6 +280,7 @@ jobs:
           name: cross-module-decreases-export-experiment
           path: |
             .vermilion/dalek-provenance/recursive-export-experiment.json
+            .vermilion/dalek-provenance/experimental-vcs.json
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
             .vermilion/dalek-provenance/generator.stderr

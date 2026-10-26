@@ -1,0 +1,156 @@
+name: Matched dalek-lite baseline acquisition (research)
+
+on:
+  push:
+    branches:
+      - research/dalek-cross-module-export-eval
+    paths:
+      - .github/workflows/research-dalek-matched-baseline.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dalek-baseline-pinned-48600836
+  cancel-in-progress: true
+
+jobs:
+  native-baseline-acquisition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install native host prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore reusable pinned toolchains
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-Linux-dalek-matched-baseline
+          restore-keys: |
+            native-v3-Linux-
+      - name: Select baseline Verus pin in ephemeral CI workspace only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path("scripts/setup_verus.sh")
+          source = script.read_text()
+          old='pin="4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"'
+          new='pin="48600836424a79420589c56d86e720236a029811"'
+          assert source.count(old)==1
+          source=source.replace(old,new)
+          assert source.count("verus-cross-module-export-prototype")==1
+          source=source.replace("verus-cross-module-export-prototype","verus-cross-module-baseline-48600836")
+          script.write_text(source)
+          PY
+          grep '^pin="48600836424a79420589c56d86e720236a029811"$' scripts/setup_verus.sh
+      - name: Build baseline native Rust adapter and Lean generator
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Acquire identical dalek-lite source using baseline Verus
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          mkdir -p .vermilion/matched-baseline
+          ./case-studies/dalek-lite/fetch_upstream.sh
+          test "$(git -C case-studies/dalek-lite/upstream rev-parse HEAD)" = de9ebf01599fedbbced28b938e2c36c538fe4ae5
+          ./scripts/setup_verus.sh
+          test "$(git -C .verus-checkout rev-parse HEAD)" = 48600836424a79420589c56d86e720236a029811
+          repository="$PWD"
+          source scripts/verus_env.sh
+          rustup run "$verus_toolchain" rustc --edition=2021 \
+            --crate-name subtle --crate-type rlib \
+            case-studies/dalek-lite/subtle_stub.rs \
+            -o .vermilion/matched-baseline/libsubtle_stub.rlib
+          VERUS_VIR_EXPORT="$repository/.vermilion/matched-baseline/dalek-vir.bin" \
+            "$verus" case-studies/dalek-lite/layer_a.rs --crate-type=lib \
+            --extern "subtle=$repository/.vermilion/matched-baseline/libsubtle_stub.rlib" \
+            --no-verify > .vermilion/matched-baseline/frontend.stdout \
+                        2> .vermilion/matched-baseline/frontend.stderr
+          ./crates/vermilion_direct/target/release/vermilion_direct \
+            .vermilion/matched-baseline/dalek-vir.bin \
+            --out .vermilion/matched-baseline/dalek-ir.sexp \
+            > .vermilion/matched-baseline/lower.stdout \
+            2> .vermilion/matched-baseline/lower.stderr
+          source scripts/lean_env.sh
+          vrml_lake_build_if_stale vrml_gen Vermilion
+          ./.lake/build/bin/vrml_gen --mode per-function \
+            --generated-root case-studies/dalek-lite/generated \
+            .vermilion/matched-baseline/dalek-ir.sexp \
+            > .vermilion/matched-baseline/generator.stdout \
+            2> .vermilion/matched-baseline/generator.stderr
+      - name: Fail-closed baseline inventory and reproducible hash receipt
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("case-studies/dalek-lite/generated")
+          manifests=sorted(root.glob("*.json"))
+          assert len(manifests)==27, f"baseline manifest count {len(manifests)}"
+          obligations={}
+          refused={}
+          for manifest in manifests:
+            doc=json.loads(manifest.read_text())
+            assert doc["mode"]=="per-function", manifest
+            for entry in doc.get("obligations", []):
+              name=entry["name"]
+              assert name not in obligations, ("duplicate source-keyed VC",name)
+              obligations[name]=entry["statement_hash"]
+            for entry in doc.get("refused", []):
+              name=entry["function"]
+              assert name not in refused or refused[name]==entry["message"]
+              refused[name]=entry["message"]
+          assert len(obligations)==5215, ("baseline VC count drifted",len(obligations))
+          assert len(refused)==38, ("baseline refusal count drifted",len(refused))
+          report={"verus_sha":"48600836424a79420589c56d86e720236a029811",
+            "source_sha":"de9ebf01599fedbbced28b938e2c36c538fe4ae5",
+            "manifest_count":len(manifests),
+            "obligation_count":len(obligations),
+            "unique_refused":len(refused),
+            "source_keyed_obligations":obligations,
+            "refused_functions":refused,
+            "whole_case_study_verified":False}
+          out=Path(".vermilion/matched-baseline/baseline-vcs.json")
+          out.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
+          print("MATCHED_BASELINE",len(manifests),len(obligations),len(refused),flush=True)
+          PY
+          (cd .vermilion/matched-baseline &&
+             sha256sum baseline-vcs.json dalek-vir.bin dalek-ir.sexp > SHA256SUMS)
+      - name: Preserve independently replayable baseline receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dalek-matched-baseline-48600836
+          path: |
+            .vermilion/matched-baseline/baseline-vcs.json
+            .vermilion/matched-baseline/frontend.stderr
+            .vermilion/matched-baseline/lower.stderr
+            .vermilion/matched-baseline/generator.stderr
+            .vermilion/matched-baseline/SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 14
