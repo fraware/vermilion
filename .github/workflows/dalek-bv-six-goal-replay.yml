@@ -31,6 +31,8 @@ jobs:
           python3 -m unittest discover -s tests -p test_dalek_bv_full_blocks.py -v
           python3 -m unittest discover -s tests -p test_dalek_bv_context_replay.py -v
           python3 scripts/audit_dalek_bv_provenance.py --help
+          python3 -m py_compile scripts/classify_dalek_tracked_unit.py
+          python3 -m unittest discover -s tests -p test_dalek_unit_classifier.py -v
           python3 -m py_compile scripts/compare_dalek_bv_modes.py
           python3 scripts/compare_dalek_bv_modes.py --help
       - name: Install pinned Verus and Lean host prerequisites
@@ -310,7 +312,7 @@ jobs:
             .vermilion/dalek-provenance/*-block.stderr
           if-no-files-found: warn
           retention-days: 14
-      - name: Audit six proofs in full tracked units; preserve unrelated automation failures
+      - name: Audit six proofs in full tracked units with fail-closed outcome classification
         shell: bash
         run: |
           set -euo pipefail
@@ -377,39 +379,37 @@ jobs:
               field_lemmas_mul_lemmas) unit="layer_a_lemmas_field_lemmas_mul_lemmas_lemma_mul_boundary.lean";;
               pow2k_lemmas) unit="layer_a_lemmas_field_lemmas_pow2k_lemmas_lemma_pow2k_loop_boundary.lean";;
             esac
-            # The six target goals are closed, yet these large units already
-            # contain unrelated vrml tactic failures. Preserve those as an
-            # EXPECTED REJECTION, never as whole-unit acceptance.
+            # Classify each independent full unit: zero-error compilation
+            # is success; only exact, known vrml automation errors are an
+            # acceptable INCOMPLETE outcome. Timeouts and novel errors fail.
+            unit_path="case-studies/dalek-lite/proofs/$stem/$unit"
             set +e
-            timeout 600s lean "case-studies/dalek-lite/proofs/$stem/$unit" \
+            timeout 600s lean "$unit_path" \
               > "$evidence/$stem-tracked.stdout" 2> "$evidence/$stem-tracked.stderr"
             verdict=$?
             set -e
-            test "$verdict" -eq 1
-            test ! -s "$evidence/$stem-tracked.stderr"
-            if grep -Eiq 'sorryAx|admit|_native\.|Lean\.trustCompiler' "$evidence/$stem-tracked.stdout"; then
-              echo "Forbidden proof axiom found in whole-unit trial: $stem" >&2
-              exit 2
-            fi
-            python3 - "$stem" "$evidence/$stem-tracked.stdout" <<'PY'
-          import json, re, sys
-          from pathlib import Path
-          stem, logfile = sys.argv[1:]
-          log=Path(logfile).read_text()
-          errors=re.findall(r"(?m)^.+?:\d+:\d+: error: (.+)$",log)
-          assert errors, f"Expected pre-existing failing automation in {stem}"
-          assert all(e=="vrml: no ladder rung closed the goal (tried [grind," for e in errors), (
-              stem, errors)
-          out=Path(".vermilion/dalek-provenance")/(stem+"-tracked-negative-control.json")
-          out.write_text(json.dumps({
-              "stem":stem, "unrelated_automation_failures":len(errors),
-              "six_targeted_proofs_verified_by_separate_generated_context_replay":True,
-              "whole_unit_kernel_checked":False,
-              "complete_case_study_verified":False,
-          },sort_keys=True,indent=2)+"\n")
-          print("EXPECTED_UNRELATED_VRML_FAILURES",stem,len(errors))
-          PY
+            python3 scripts/classify_dalek_tracked_unit.py \
+              --stem "$stem" --source "$unit_path" --exit-code "$verdict" \
+              --stdout "$evidence/$stem-tracked.stdout" \
+              --stderr "$evidence/$stem-tracked.stderr" \
+              --output "$evidence/$stem-tracked-classification.json"
           done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          evidence=Path(".vermilion/dalek-provenance")
+          receipt_file=evidence/"three-tracked-unit-receipt.json"
+          receipt=json.loads(receipt_file.read_text())
+          for item in receipt["units"]:
+            outcome=json.loads((evidence/(item["stem"]+"-tracked-classification.json")).read_text())
+            item["complete_unit_native_compilation_pending"]=False
+            item["whole_unit_compiled"]=outcome["whole_unit_compiled"]
+            item["outcome"]=outcome["status"]
+            item["remaining_automation_errors"]=outcome["error_count"]
+          receipt_file.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          print("TRACKED_UNIT_OUTCOMES",[(r["stem"],r["outcome"],r["remaining_automation_errors"])
+                 for r in receipt["units"]])
+          PY
           python3 scripts/check_dalek_completion.py \
             --generated case-studies/dalek-lite/generated \
             --proofs case-studies/dalek-lite/proofs \
@@ -422,9 +422,9 @@ jobs:
           assert report["manifest_count"]==27 and report["obligation_count"]==5215
           assert report["refused_count"]==38 and report["tracked_admission_count"]==0
           assert report["accepted"] is False
-          print("SIX_TARGETED_GENERATED_PROOFS_CHECKED; THREE_FULL_UNITS_REJECTED_FOR_OTHER_VRML_FAILURES; 38 lowering refusals")
+          print("SIX_TARGETED_GENERATED_PROOFS_CHECKED; TRACKED_UNIT_OUTCOMES_RECORDED; 38 baseline lowering refusals")
           PY
-          (cd "$evidence" && sha256sum *-tracked-negative-control.json three-tracked-unit-receipt.json remaining-completeness.json \
+          (cd "$evidence" && sha256sum *-tracked-classification.json three-tracked-unit-receipt.json remaining-completeness.json \
             *-tracked.stdout *-tracked.stderr *-tracked-specs.stdout *-tracked-specs.stderr \
             >> SHA256SUMS)
       - name: Preserve tracked full-unit native evidence
@@ -435,7 +435,7 @@ jobs:
           path: |
             .vermilion/dalek-provenance/three-tracked-unit-receipt.json
             .vermilion/dalek-provenance/remaining-completeness.json
-            .vermilion/dalek-provenance/*-tracked-negative-control.json
+            .vermilion/dalek-provenance/*-tracked-classification.json
             .vermilion/dalek-provenance/*-tracked.stdout
             .vermilion/dalek-provenance/*-tracked.stderr
             .vermilion/dalek-provenance/*-tracked-specs.stdout
