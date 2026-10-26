@@ -8,16 +8,6 @@ set -euo pipefail
 
 repository="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Fast path: once a full setup has succeeded, later runs only need the link
-# to still be healthy. (Delete .vermilion/setup-verus-ok to force a recheck.)
-fast_stamp="$repository/.vermilion/setup-verus-ok"
-if [[ -f "$fast_stamp" && "$fast_stamp" -nt "$0" \
-  && -x "$repository/.verus-checkout/source/target-verus/release/rust_verify" \
-  && "$(git -C "$repository/.verus-checkout" rev-parse HEAD 2>/dev/null || true)" == "$pin" \
-  && "$(cat "$repository/.verus-checkout/source/target-verus/.vermilion-built-pin" 2>/dev/null || true)" == "$pin" ]]; then
-  exit 0
-fi
-
 # The published/default setup stays on the established Verus pin. The
 # cross-module export experiment is enabled only by an explicit exact pin.
 pin="48600836424a79420589c56d86e720236a029811"
@@ -33,6 +23,18 @@ case "${VERMILION_RESEARCH_VERUS_PIN:-}" in
     exit 2
     ;;
 esac
+
+# Fast path: once a full setup has succeeded, later runs only need the link
+# to still be healthy. (Delete .vermilion/setup-verus-ok to force a recheck.)
+fast_stamp="$repository/.vermilion/setup-verus-ok"
+if [[ -f "$fast_stamp" && "$fast_stamp" -nt "$0" \
+  && -x "$repository/.verus-checkout/source/target-verus/release/rust_verify" \
+  && "$(git -C "$repository/.verus-checkout" rev-parse HEAD 2>/dev/null || true)" == "$pin" \
+  && "$(cat "$repository/.verus-checkout/source/target-verus/.vermilion-built-pin" 2>/dev/null || true)" == "$pin" ]]; then
+  exit 0
+fi
+
+
 # Our fork of verus-lang/verus (branch `dev`): upstream at the base
 # commit plus the VIR-export hook, the debug_assert-as-assert accommodation,
 # tuple-pattern function-parameter/contract lowering, general custom
