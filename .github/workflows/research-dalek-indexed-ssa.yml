@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# The production checkout remains on its published pin; this workflow alone
+# opts into the exact cross-module export experiment revision.
+env:
+  VERMILION_RESEARCH_VERUS_PIN: "4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
+
 concurrency:
   group: dalek-indexed-ssa-\${{ github.ref }}
   cancel-in-progress: true
