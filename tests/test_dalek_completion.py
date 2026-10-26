@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from check_dalek_completion import audit, complete
@@ -124,7 +125,10 @@ class FullConeTests(unittest.TestCase):
         probe = self.root / "sync"
         probe.write_text('#!/bin/sh\n[ "$2" = "--probe" ] || exit 5\nexit 0\n')
         probe.chmod(0o755)
-        result = complete(self.generated, self.proofs, checker, probe)
+        # Isolate the native-checker contract from the separately tested
+        # full dalek-lite inventory gate for this one-manifest fixture.
+        with mock.patch("check_dalek_completion.validate_full_scope", return_value=True):
+            result = complete(self.generated, self.proofs, checker, probe)
         self.assertFalse(result["accepted"])
         self.assertTrue(result["kernel_checked"])
         self.assertFalse(result["axiom_dependencies_audited"])
@@ -137,7 +141,8 @@ class FullConeTests(unittest.TestCase):
         probe = self.root / "sync"
         probe.write_text('#!/bin/sh\nexit 1\n')
         probe.chmod(0o755)
-        result = complete(self.generated, self.proofs, checker, probe)
+        with mock.patch("check_dalek_completion.validate_full_scope", return_value=True):
+            result = complete(self.generated, self.proofs, checker, probe)
         self.assertFalse(result["accepted"])
         self.assertTrue(any("stale proof twin" in x for x in result["problems"]))
 
