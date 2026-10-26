@@ -6262,6 +6262,7 @@ fn function_view_impl(
         && (
             source_path == "layer_a.backend.serial.u64.field.impl__16.as_bytes"
             || source_path == "backend.serial.u64.field.impl__16.as_bytes"
+            || source_path == "backend.serial.u64.field.impl&%16.as_bytes"
         );
     if std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
         && id.name == "as_bytes" {
