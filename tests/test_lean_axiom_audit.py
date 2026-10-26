@@ -77,20 +77,22 @@ class LeanAxiomTests(unittest.TestCase):
         for command in (checker, probe):
             command.write_text("#!/bin/sh\nexit 0\n")
             command.chmod(0o755)
+        # The one-manifest fixture is intentionally insufficient for a
+        # full dalek-lite verdict, even if every supplied theorem is valid.
         result = complete(generated, proofs, checker, probe)
-        self.assertTrue(result["accepted"], result["problems"])
-        self.assertTrue(result["kernel_checked"])
-        self.assertTrue(result["axiom_dependencies_audited"])
-        self.assertEqual(result["axiom_audited_units"], 1)
-        self.assertEqual(result["status"], "ALL_GENERATED_TWINS_NATIVE_AND_AXIOMS_CHECKED")
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["scope_checked"])
+        self.assertTrue(any("manifest inventory" in p for p in result["problems"]))
+        good, receipt = audit_proof_unit(target, ["core.x"], timeout=50)
+        self.assertTrue(good, receipt)
 
         target.write_text("axiom poison : False\n"
                           "namespace core\n theorem x : True := False.elim poison\nend core\n")
+        bad, _ = audit_proof_unit(target, ["core.x"], timeout=50)
+        self.assertFalse(bad)
         result = complete(generated, proofs, checker, probe)
         self.assertFalse(result["accepted"])
-        self.assertTrue(result["kernel_checked"])
-        self.assertFalse(result["axiom_dependencies_audited"])
-        self.assertTrue(any("axiom audit" in p for p in result["problems"]))
+        self.assertFalse(result["scope_checked"])
 
     def test_injection_and_empty_lists_rejected(self):
         for names in ([], ["bad); #eval 42"], ["x", "x"]):

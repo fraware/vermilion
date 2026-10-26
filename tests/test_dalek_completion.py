@@ -35,6 +35,16 @@ class FullConeTests(unittest.TestCase):
     def persist(self):
         self.manifest.write_text(json.dumps(self.source))
 
+
+    def test_subset_never_qualifies_as_full_cone(self):
+        checker = self.root / "checker"
+        checker.write_text("#!/bin/sh\nexit 0\n")
+        checker.chmod(0o755)
+        result = complete(self.generated, self.proofs, checker, checker)
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["scope_checked"])
+        self.assertTrue(any("manifest inventory" in p for p in result["problems"]))
+
     def test_no_checker_cannot_pass(self):
         self.assertFalse(complete(self.generated, self.proofs, None, None)["accepted"])
 

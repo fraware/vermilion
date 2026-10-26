@@ -17,12 +17,71 @@ from lean_admission_scan import admission_positions
 from audit_lean_axioms import audit_proof_unit
 
 
+# Complete dalek-lite Layer Set A inventory, pinned from 27 tracked proof
+# subdirectories. Any expansion or contraction needs an explicit review.
+EXPECTED_MANIFEST_STEMS = frozenset([
+    "add_lemmas",
+    "as_bytes_lemmas",
+    "bit_lemmas",
+    "common_lemmas_mul_lemmas",
+    "compute_q_lemmas",
+    "div_mod_lemmas",
+    "field_lemmas_mul_lemmas",
+    "field_specs",
+    "field_specs_u64",
+    "field_u64",
+    "from_bytes_lemmas",
+    "layer_a",
+    "limbs_to_bytes_lemmas",
+    "load8_lemmas",
+    "mask_lemmas",
+    "negate_lemmas",
+    "number_theory_lemmas",
+    "pow2_51_lemmas",
+    "pow2k_lemmas",
+    "pow_lemmas",
+    "primality_specs",
+    "reduce_lemmas",
+    "shift_lemmas",
+    "sum_lemmas",
+    "to_bytes_reduction_lemmas",
+    "to_nat_lemmas",
+    "u64_5_as_nat_lemmas",
+])
+BASELINE_OBLIGATIONS = 5215
+
+
+def validate_full_scope(generated: Path, proofs: Path, result: dict) -> bool:
+    actual = {p.stem for p in generated.glob("*.json")}
+    if actual != EXPECTED_MANIFEST_STEMS:
+        missing = sorted(EXPECTED_MANIFEST_STEMS - actual)
+        extra = sorted(actual - EXPECTED_MANIFEST_STEMS)
+        result["problems"].append(
+            f"incomplete dalek-lite manifest inventory: missing={missing}; extra={extra}"
+        )
+        return False
+    if result["obligation_count"] < BASELINE_OBLIGATIONS:
+        result["problems"].append(
+            f"dalek-lite obligation inventory shrank below {BASELINE_OBLIGATIONS}: "
+            f"{result['obligation_count']}; review scope or the acquisition pipeline"
+        )
+        return False
+    empty = [stem for stem in sorted(EXPECTED_MANIFEST_STEMS)
+             if not (proofs / stem).is_dir()
+             or not any((proofs / stem).glob("*.lean"))]
+    if empty:
+        result["problems"].append(f"missing dalek-lite tracked proof directories: {empty}")
+        return False
+    result["scope_checked"] = True
+    return True
+
+
 def audit(generated: Path, proofs: Path) -> dict:
     result = dict(accepted=False, kernel_checked=False, axiom_dependencies_audited=False,
                   status="INCOMPLETE",
                   manifest_count=0, obligation_count=0, refused_count=0, refused_records_count=0,
                   tracked_admission_count=0, refused_functions=[],
-                  tracked_admissions=[], problems=[])
+                  tracked_admissions=[], scope_checked=False, problems=[])
     if not generated.is_dir():
         result["problems"].append(f"missing generated directory: {generated}")
         return result
@@ -121,6 +180,8 @@ def complete(generated: Path, proofs: Path, checker: Path | None,
         return result
     if generated.name != "generated":
         result["problems"].append("full twin certification requires canonical generated/ path")
+        return result
+    if not validate_full_scope(generated, proofs, result):
         return result
     if (checker is None or not checker.is_file()
         or sync_probe is None or not sync_probe.is_file()):
