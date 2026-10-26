@@ -759,7 +759,7 @@ mod delta_scope_regressions {
         let (delta, records) = delta_module(generated, &[]);
         assert!(records.is_empty());
         assert_eq!(delta.matches("\nend\n").count(), 2);
-        assert!(delta.ends_with("end\nend\n\n"));
+        assert!(delta.ends_with("end\nend\n"));
     }
 
     // An evidence instance opens the section that remains in scope over
