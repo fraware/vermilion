@@ -334,8 +334,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests -p test_dalek_ssa_stability.py -v
           python3 scripts/check_dalek_ssa_stability.py \
-            .vermilion/dalek-provenance/experimental-vcs.json
-            .vermilion/dalek-provenance/ssa-reconciliation.json \
+            .vermilion/dalek-provenance/experimental-vcs.json \
             --output .vermilion/dalek-provenance/ssa-reconciliation.json
           python3 - <<'PY'
           import json
@@ -356,6 +355,7 @@ jobs:
             .vermilion/dalek-provenance/recursive-export-experiment.json
             .vermilion/dalek-provenance/ssa-differential-*.md
             .vermilion/dalek-provenance/experimental-vcs.json
+            .vermilion/dalek-provenance/ssa-reconciliation.json
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
             .vermilion/dalek-provenance/generator.stderr
