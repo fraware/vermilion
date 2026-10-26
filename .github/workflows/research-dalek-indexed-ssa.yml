@@ -122,6 +122,16 @@ jobs:
             --out .vermilion/dalek-provenance/dalek-ir.sexp \
             > .vermilion/dalek-provenance/lower.stdout \
             2> .vermilion/dalek-provenance/lower.stderr
+          # Fail closed if the opt-in mode skipped the intended function.
+          grep -Fq "VRML_SSA_TARGET_DIAGNOSTIC " \
+            .vermilion/dalek-provenance/lower.stderr
+          grep -Eq 'VRML_SSA_TARGET_DIAGNOSTIC .*selected=true' \
+            .vermilion/dalek-provenance/lower.stderr
+          if grep -Eq 'VRML_SSA_TARGET_DIAGNOSTIC .*selected=false' \
+               .vermilion/dalek-provenance/lower.stderr; then
+            echo "Unexpected as_bytes function failed exact selector" >&2
+            exit 1
+          fi
           source scripts/lean_env.sh
           vrml_lake_build_if_stale vrml_gen Vermilion
           ./.lake/build/bin/vrml_gen --mode per-function \
