@@ -63,6 +63,26 @@ jobs:
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           ./scripts/build.sh
+      - name: Validate opt-in SSA against positive and negative differential oracles
+        shell: bash
+        env:
+          VERMILION_EXPERIMENTAL_SSA_INDEX: "1"
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          repository="$PWD"
+          source scripts/verus_env.sh
+          mkdir -p .vermilion/dalek-provenance
+          for mode in per-function per-file; do
+            rm -f .vermilion/differential-cache.json docs/reports/generated/differential-m1-results.md
+            python3 scripts/run_differential.py --emit-mode "$mode"
+            python3 scripts/differential_soundness.py \
+              docs/reports/generated/differential-m1-results.md tests/differential
+            python3 scripts/check_capture_goals.py .
+            cp docs/reports/generated/differential-m1-results.md \
+              ".vermilion/dalek-provenance/ssa-differential-$mode.md"
+            echo "SSA_INDEX_DIFFERENTIAL_VERDICTS_MATCH $mode"
+          done
       - name: Capture dalek SST and Lean with experimental SSA indexed assignments
         shell: bash
         env:
@@ -284,6 +304,7 @@ jobs:
           name: dalek-indexed-ssa-experiment
           path: |
             .vermilion/dalek-provenance/recursive-export-experiment.json
+            .vermilion/dalek-provenance/ssa-differential-*.md
             .vermilion/dalek-provenance/experimental-vcs.json
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
