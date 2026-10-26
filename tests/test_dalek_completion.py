@@ -118,7 +118,7 @@ class FullConeTests(unittest.TestCase):
         self.assertFalse(result["accepted"])
         self.assertTrue(result["kernel_checked"])
         self.assertFalse(result["axiom_dependencies_audited"])
-        self.assertIn("AXIOM_AUDIT_PENDING", result["status"])
+        self.assertTrue(any("axiom audit" in p for p in result["problems"]))
 
     def test_unverified_freshness_fails(self):
         checker = self.root / "checker"

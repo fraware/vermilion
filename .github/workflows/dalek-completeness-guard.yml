@@ -5,6 +5,8 @@ on:
     paths:
       - scripts/check_dalek_completion.py
       - scripts/lean_admission_scan.py
+      - scripts/audit_lean_axioms.py
+      - tests/test_lean_axiom_audit.py
       - tests/test_dalek_completion.py
       - .github/workflows/dalek-completeness-guard.yml
   push:
@@ -26,6 +28,27 @@ jobs:
       - name: Run negative and positive contract tests
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/check_dalek_completion.py scripts/lean_admission_scan.py
+          python3 -m py_compile scripts/check_dalek_completion.py scripts/lean_admission_scan.py scripts/audit_lean_axioms.py
           python3 -m unittest discover -s tests -p test_dalek_completion.py -v
           python3 scripts/check_dalek_completion.py --help
+
+  lean-axiom-dependency-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install exact pinned Lean toolchain
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+            sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          "$HOME/.elan/bin/elan" toolchain install "$(cat lean-toolchain)"
+          "$HOME/.elan/bin/elan" default "$(cat lean-toolchain)"
+      - name: Adversarial kernel axiom-dependency tests
+        run: |
+          set -euo pipefail
+          lean --version
+          python3 -m unittest discover -s tests -p test_lean_axiom_audit.py -v

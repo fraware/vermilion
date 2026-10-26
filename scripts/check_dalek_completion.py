@@ -3,7 +3,7 @@
 
 Full acceptance requires fresh manifests, no refusals, no tracked admissions,
 native proof-twin checks, and a declaration-level Lean axiom-dependency audit.
-The latter is not yet available: a clean native run remains INCOMPLETE.
+This gate audits source-to-Lean obligations, not translator semantics.
 """
 from __future__ import annotations
 import argparse
@@ -14,6 +14,7 @@ import subprocess
 import sys
 
 from lean_admission_scan import admission_positions
+from audit_lean_axioms import audit_proof_unit
 
 
 def audit(generated: Path, proofs: Path) -> dict:
@@ -153,10 +154,32 @@ def complete(generated: Path, proofs: Path, checker: Path | None,
     # Retain its receipt but FAIL CLOSED until a declaration-level axiom audit
     # is implemented and independently validated.
     result["kernel_checked"] = True
-    result["status"] = "NATIVE_TWINS_CHECKED_AXIOM_AUDIT_PENDING"
-    result["problems"].append(
-        "full acceptance requires an independent Lean theorem axiom-dependency audit"
-    )
+    units: dict[Path, set[str]] = {}
+    for manifest in sorted(generated.glob("*.json")):
+        doc = json.loads(manifest.read_text(encoding="utf-8"))
+        for row in doc["obligations"]:
+            generated_unit = row.get("lean_file") or doc.get("lean_file")
+            if not isinstance(generated_unit, str) or "/generated/" not in generated_unit:
+                result["problems"].append(f"invalid generated unit path: {generated_unit}")
+                return result
+            twin = Path(generated_unit.replace("/generated/", "/proofs/", 1))
+            if not twin.is_file():
+                result["problems"].append(f"missing proof unit for axiom audit: {twin}")
+                return result
+            units.setdefault(twin, set()).add(row["name"])
+    if not units:
+        result["problems"].append("no theorem units for axiom audit")
+        return result
+    result["axiom_audited_units"] = 0
+    for file, names in sorted(units.items()):
+        passed, receipt = audit_proof_unit(file, sorted(names))
+        if not passed:
+            result["problems"].append(receipt)
+            return result
+        result["axiom_audited_units"] += 1
+    result["axiom_dependencies_audited"] = True
+    result["accepted"] = True
+    result["status"] = "ALL_GENERATED_TWINS_NATIVE_AND_AXIOMS_CHECKED"
     return result
 
 
