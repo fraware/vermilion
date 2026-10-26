@@ -384,7 +384,7 @@ jobs:
             # acceptable INCOMPLETE outcome. Timeouts and novel errors fail.
             unit_path="case-studies/dalek-lite/proofs/$stem/$unit"
             set +e
-            timeout 600s lean "$unit_path" \
+            timeout --signal=TERM --kill-after=5s 180s lean "$unit_path" \
               > "$evidence/$stem-tracked.stdout" 2> "$evidence/$stem-tracked.stderr"
             verdict=$?
             set -e
@@ -406,6 +406,7 @@ jobs:
             item["whole_unit_compiled"]=outcome["whole_unit_compiled"]
             item["outcome"]=outcome["status"]
             item["remaining_automation_errors"]=outcome["error_count"]
+            item["resource_timeout_incomplete"]=outcome["status"]=="resource_timeout_incomplete"
           receipt_file.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print("TRACKED_UNIT_OUTCOMES",[(r["stem"],r["outcome"],r["remaining_automation_errors"])
                  for r in receipt["units"]])

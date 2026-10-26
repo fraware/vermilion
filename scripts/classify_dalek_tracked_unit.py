@@ -38,6 +38,13 @@ def classify(source: str, exit_code: int, stdout: str, stderr: str) -> dict:
     """
     if exit_code == 0 and not stdout.strip() and not stderr.strip():
         return {"status": "compiled", "error_count": 0, "whole_unit_compiled": True}
+    # A bounded Lean run which exhausted its wall-clock budget is
+    # INCONCLUSIVE, not a failed proof or successful kernel check. Accept
+    # only a clean timeout receipt with no partial diagnostics; unexpected
+    # output continues to fail closed.
+    if exit_code == 124 and not stdout.strip() and not stderr.strip():
+        return {"status": "resource_timeout_incomplete", "error_count": 0,
+                "whole_unit_compiled": False, "timed_out": True}
     if exit_code != 1 or stderr.strip() or FORBIDDEN.search(stdout):
         raise ValueError("unexpected exit, stderr, or forbidden proof diagnostic")
     pattern = re.compile(

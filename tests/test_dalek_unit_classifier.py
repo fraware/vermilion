@@ -25,9 +25,22 @@ class DalekUnitClassifierTests(unittest.TestCase):
             classify(SOURCE, 0, "sorryAx", "")
 
     def test_unexpected_exit_status_is_rejected(self):
-        for code in (2, 124, 137):
+        for code in (2, 137):
             with self.subTest(code=code), self.assertRaises(ValueError):
                 classify(SOURCE, code, DIAGNOSTIC, "")
+
+
+    def test_empty_timeout_is_incomplete_not_proof(self):
+        result = classify(SOURCE, 124, "", "")
+        self.assertEqual(result["status"], "resource_timeout_incomplete")
+        self.assertFalse(result["whole_unit_compiled"])
+        self.assertTrue(result["timed_out"])
+
+    def test_timeout_with_unexpected_output_is_rejected(self):
+        for out, err in ((DIAGNOSTIC, ""), ("", "error: compiler fault"),
+                         ("sorryAx", "")):
+            with self.subTest(out=out, err=err), self.assertRaises(ValueError):
+                classify(SOURCE, 124, out, err)
 
     def test_missing_diagnostic_is_rejected(self):
         with self.assertRaises(ValueError):
