@@ -393,7 +393,8 @@ visibility channel, so a hidden (`#[verifier::opaque]`, un-`reveal`ed)
 definition stays invisible to every ladder rung, matching Verus's
 verdicts. The simp equation applied through the list is the
 per-occurrence ground defining equation of the no-fuel design. -/
-def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
+def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false)
+    (inMutual : Bool := false) :
     String := Id.run do
   -- `noncomputable` only when the body forces it (a possibly-zero
   -- `ediv`/`emod`) — otherwise generated code stays plain (user directive
@@ -409,7 +410,11 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
   -- `termination_by` from the Verus-checked decreases measures.
   let recursive := specFn.isRecursive
   let propDec := specFn.needsPropDecidable
-  let classical := specFn.body.needsClassical || forceClassical || propDec
+  -- Cross-module recursive specs carry range guards including predicates
+  -- supplied as opaque/revealed Verus definitions. Their Decidable instances
+  -- may be unavailable even when the original body needs no classical choice.
+  -- The guard is a Prop in Lean and its branching semantics remains the same.
+  let classical := recursive || specFn.body.needsClassical || forceClassical || propDec
   let mut out := ""
   -- Navigation marker: the editor's Lean→Rust jump (⌘⇧J) reads the
   -- definition's source position from this line.
@@ -433,7 +438,9 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
       out := out ++ s!" ({leanSegment binder.name} : {binder.ty.render})"
     out := out ++ s!" : {specFn.ret.render}\n"
     return out
-  if (recursive && classical) || propDec then
+  -- A mutual block shares one section-scoped Classical instance. A command-
+  -- scoped `open Classical in` per definition is invalid inside the block.
+  if !inMutual && ((recursive && classical) || propDec) then
     out := out ++ "open Classical in\n"
   let marker := if classical then "noncomputable def" else "def"
   out := out ++ s!"{marker} {specFn.id.qualified}"
@@ -485,9 +492,13 @@ def renderSpecFn (specFn : SpecFn) (forceClassical : Bool := false) :
     -- `b`; and a `natClip`ped measure (`binomial (natClip (n-1)) …`)
     -- surfaces an `iteP` the ladder splits before finishing with `omega`.
     out := out ++
-      "decreasing_by all_goals first | omega | (simp_all; omega) | \
-(simp_all; exact ⟨Int.emod_lt_of_pos _ (by omega), by omega⟩) | \
-(simp_all [Vermilion.iteP]; split_ifs <;> omega) | simp_all\n"
+      "decreasing_by all_goals first | \
+(exact Vermilion.Seq.tail_subrange_strict _ (by omega)) | \
+(solve | simp_all <;> (first | exact Vermilion.Seq.tail_subrange_strict _ (by omega) | omega)) | \
+(solve | omega) | (solve | simp_all; omega) | \
+(solve | simp_all; exact ⟨Int.emod_lt_of_pos _ (by omega), by omega⟩) | \
+(solve | simp_all [Vermilion.iteP]; split_ifs <;> omega) | \
+(solve | simp_all [Vermilion.Seq.subrange, Vermilion.Seq.len, List.length_take, List.length_drop] <;> omega) | simp_all\n"
   return out
 
 /-- Header of every generated module: imports plus linter silencing.
@@ -558,10 +569,13 @@ def renderSpecsSection (datatypes : Array DataView) (specFns : Array SpecFn) :
       let specFn := specFns[group[0]!]!
       out := out ++ renderSpecFn specFn (force specFn) ++ "\n"
     else
-      out := out ++ "mutual\n"
+      -- The `mutual` elaborator expects a contiguous group of definitions.
+      -- Scope the classical Decidable fallback around the whole group;
+      -- declaration names and the generated VC statements remain unchanged.
+      out := out ++ "section\nopen Classical\nmutual\n"
       for j in group do
-        out := out ++ renderSpecFn specFns[j]! (force specFns[j]!) ++ "\n"
-      out := out ++ "end\n\n"
+        out := out ++ renderSpecFn specFns[j]! (force specFns[j]!) true ++ "\n"
+      out := out ++ "end\nend\n\n"
   return out
 
 /-- Append namespace-wrapped obligation blocks (contiguous per function) to
