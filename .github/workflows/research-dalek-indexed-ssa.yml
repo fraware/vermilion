@@ -442,14 +442,33 @@ jobs:
           # Generated Specs is shared by the exact VCs. Compile its pinned
           # source into a shadow Lean import tree before checking the proofs.
           mkdir -p .lake/build/lib/lean/generated/field_u64
-          lean --root=case-studies/dalek-lite \
+          # Lean prints elaboration errors to stdout on some versions.
+          # Archive BOTH streams and surface the actual diagnostic on error;
+          # never mistake an empty stderr for successful kernel checking.
+          if ! lean --root=case-studies/dalek-lite \
             -o .lake/build/lib/lean/generated/field_u64/Specs.olean \
             case-studies/dalek-lite/generated/field_u64/Specs.lean \
-            > "$out/ssa-shift-specs.stdout" 2> "$out/ssa-shift-specs.stderr"
-          test ! -s "$out/ssa-shift-specs.stderr"
-          lean "$out/ssa-shift-bounds.lean" \
-            > "$out/ssa-shift-proofs.stdout" 2> "$out/ssa-shift-proofs.stderr"
-          test ! -s "$out/ssa-shift-proofs.stderr"
+            > "$out/ssa-shift-specs.stdout" 2> "$out/ssa-shift-specs.stderr"; then
+            echo "Pinned generated Specs compilation failed" >&2
+            tail -n 100 "$out/ssa-shift-specs.stdout" >&2
+            tail -n 100 "$out/ssa-shift-specs.stderr" >&2
+            exit 1
+          fi
+          if ! lean "$out/ssa-shift-bounds.lean" \
+            > "$out/ssa-shift-proofs.stdout" 2> "$out/ssa-shift-proofs.stderr"; then
+            echo "Source-keyed shift theorem compilation failed" >&2
+            tail -n 100 "$out/ssa-shift-proofs.stdout" >&2
+            tail -n 100 "$out/ssa-shift-proofs.stderr" >&2
+            exit 1
+          fi
+          # The candidate has no sorry/admit, and a successfully elaborated
+          # theorem must not depend on an admission in this generated module.
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-shift-specs.stdout" "$out/ssa-shift-specs.stderr" \
+            "$out/ssa-shift-proofs.stdout" "$out/ssa-shift-proofs.stderr"; then
+            echo "Admission dependency in shift proof check" >&2
+            exit 1
+          fi
           echo "SSA_45_SOURCE_KEYED_SHIFT_VCS_KERNEL_CHECKED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
@@ -484,7 +503,9 @@ jobs:
             .vermilion/dalek-provenance/ssa-structural-audit.json
             .vermilion/dalek-provenance/ssa-shift-bounds.lean
             .vermilion/dalek-provenance/ssa-shift-bounds-proofs.json
+            .vermilion/dalek-provenance/ssa-shift-specs.stdout
             .vermilion/dalek-provenance/ssa-shift-specs.stderr
+            .vermilion/dalek-provenance/ssa-shift-proofs.stdout
             .vermilion/dalek-provenance/ssa-shift-proofs.stderr
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
