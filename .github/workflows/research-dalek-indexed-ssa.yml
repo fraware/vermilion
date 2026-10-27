@@ -424,6 +424,7 @@ jobs:
             --receipt .vermilion/dalek-provenance/ssa-index-execution.json \
             --modules .vermilion/dalek-provenance/ssa-target-lean \
             --output .vermilion/dalek-provenance/ssa-structural-audit.json
+          python3 -m unittest discover -s tests -p test_indexed_ssa_lean_audit.py -v
           echo "SSA_SOURCE_KEYED_LEAN_STRUCTURE_AUDITED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
