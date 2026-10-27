@@ -479,6 +479,34 @@ jobs:
             exit 1
           fi
           echo "SSA_45_SOURCE_KEYED_SHIFT_VCS_KERNEL_CHECKED"
+      - name: Kernel-check 87 source-keyed sequence-index bound proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_index_bounds.py
+          python3 scripts/prove_dalek_index_bounds.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-sequence-bounds.lean" \
+            --report "$out/ssa-sequence-bounds-proofs.json"
+          source scripts/lean_env.sh
+          # Reuse the exact Specs.olean already elaborated and checked by
+          # the preceding 45-proof stage. Keep the 87 VCs isolated from it.
+          if ! lean "$out/ssa-sequence-bounds.lean" \
+            > "$out/ssa-sequence-proofs.stdout" 2> "$out/ssa-sequence-proofs.stderr"; then
+            echo "Source-keyed sequence-bound Lean proof check failed" >&2
+            tail -n 130 "$out/ssa-sequence-proofs.stdout" >&2
+            tail -n 130 "$out/ssa-sequence-proofs.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-sequence-proofs.stdout" "$out/ssa-sequence-proofs.stderr"; then
+            echo "Admission dependency in sequence-bound proofs" >&2
+            exit 1
+          fi
+          echo "SSA_87_SOURCE_KEYED_SEQUENCE_VCS_KERNEL_CHECKED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -516,6 +544,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-shift-specs.stderr
             .vermilion/dalek-provenance/ssa-shift-proofs.stdout
             .vermilion/dalek-provenance/ssa-shift-proofs.stderr
+            .vermilion/dalek-provenance/ssa-sequence-bounds.lean
+            .vermilion/dalek-provenance/ssa-sequence-bounds-proofs.json
+            .vermilion/dalek-provenance/ssa-sequence-proofs.stdout
+            .vermilion/dalek-provenance/ssa-sequence-proofs.stderr
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
