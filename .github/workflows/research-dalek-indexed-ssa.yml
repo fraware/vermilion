@@ -157,6 +157,29 @@ jobs:
             echo "Unexpected as_bytes function failed exact selector" >&2
             exit 1
           fi
+          # Selection is insufficient: require an actual, fresh defining
+          # equation receipt for every indexed-SSA update performed.
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          root=Path(".vermilion/dalek-provenance")
+          lines=(root/"lower.stderr").read_text().splitlines()
+          matches=[line for line in lines if line.startswith("VRML_SSA_INDEX_EQ ")]
+          pat=re.compile(r"VRML_SSA_INDEX_EQ binder=([A-Za-z_][A-Za-z_0-9]*)\Z")
+          names=[]
+          for line in matches:
+              match=pat.fullmatch(line)
+              assert match is not None, ("Malformed SSA receipt",line)
+              names.append(match.group(1))
+          assert names, "Selector matched, but no indexed SSA equation was emitted"
+          assert len(names)==len(set(names)), "Repeated SSA defining-equation name"
+          (root/"ssa-index-execution.json").write_text(
+              json.dumps({"executed_equations":len(names),
+                          "unique_binders":len(set(names)),
+                          "binders":names},sort_keys=True,indent=2)+"\n")
+          print("SSA_INDEX_EQUATIONS_EMITTED",len(names))
+          PY
           source scripts/lean_env.sh
           vrml_lake_build_if_stale vrml_gen Vermilion
           ./.lake/build/bin/vrml_gen --mode per-function \
@@ -343,6 +366,54 @@ jobs:
           print("EXPERIMENTAL_EXPORT_OBLIGATIONS",len(obligations),
                 "RECOVERED_FUNCTIONS",len(recovered),"REFUSALS",len(refused))
           PY
+      - name: Preserve exact generated as_bytes Lean evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import shutil
+          from pathlib import Path
+          source_root=Path("case-studies/dalek-lite/generated").resolve()
+          output=Path(".vermilion/dalek-provenance")
+          evidence=output/"ssa-target-lean"
+          prefix="layer_a.backend.serial.u64.field.impl__16.as_bytes."
+          rows=[]
+          modules={}
+          for manifest in sorted(source_root.glob("*.json")):
+              doc=json.loads(manifest.read_text())
+              for obligation in doc.get("obligations", []):
+                  name=obligation["name"]
+                  if not name.startswith(prefix):
+                      continue
+                  source=Path(obligation["lean_file"]).resolve()
+                  rel=source.relative_to(source_root)
+                  assert source.is_file(), ("Missing Lean source",name,str(source))
+                  content=source.read_text()
+                  marker=f'-- vrml:begin {name} {obligation["statement_hash"]}'
+                  assert any(line.startswith(marker) for line in content.splitlines()), (
+                      "Obligation absent from declared Lean source",name,str(source))
+                  digest=hashlib.sha256(source.read_bytes()).hexdigest()
+                  modules[str(rel)]=(source,digest)
+                  rows.append({"name":name,"statement_hash":obligation["statement_hash"],
+                               "module":str(rel),"module_sha256":digest})
+          assert len(rows)==156, ("Unexpected as_bytes VC inventory",len(rows))
+          assert len(set(row["name"] for row in rows))==156, "Duplicate as_bytes VC"
+          for rel,(source,digest) in modules.items():
+              target=evidence/rel
+              target.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(source,target)
+              assert hashlib.sha256(target.read_bytes()).hexdigest()==digest
+          (output/"ssa-target-lean-index.json").write_text(json.dumps({
+              "target_function":prefix[:-1],
+              "obligations":rows,
+              "obligation_count":len(rows),
+              "module_count":len(modules)
+          },indent=2,sort_keys=True)+"\n")
+          print("SSA_AS_BYTES_LEAN_SOURCES_PRESERVED",
+                len(rows),"obligations",len(modules),"modules")
+          PY
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -371,6 +442,9 @@ jobs:
             .vermilion/dalek-provenance/ssa-differential-*.md
             .vermilion/dalek-provenance/experimental-vcs.json
             .vermilion/dalek-provenance/ssa-reconciliation.json
+            .vermilion/dalek-provenance/ssa-index-execution.json
+            .vermilion/dalek-provenance/ssa-target-lean-index.json
+            .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
             .vermilion/dalek-provenance/generator.stderr
