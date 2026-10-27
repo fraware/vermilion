@@ -104,6 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          repository="$PWD"
           source scripts/verus_env.sh
           rustup run "$verus_toolchain" cargo test -p vermilion_backend --bin vrml_check
           echo "SSA_MUTUAL_DELTA_CHECKER_REGRESSIONS_PASSED"
