@@ -5748,7 +5748,11 @@ impl Lowering<'_> {
                         Expr::Var(name.clone()),
                         value,
                     )));
-                    self.env.insert(root, Expr::Var(name));
+                    self.env.insert(root, Expr::Var(name.clone()));
+                    // Research-only execution receipt. Exact-head CI checks
+                    // that the selected function really emitted indexed SSA
+                    // equations, not merely that its selector matched.
+                    eprintln!("VRML_SSA_INDEX_EQ binder={name}");
                 } else {
                     self.env.insert(root, value);
                 }
