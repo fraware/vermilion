@@ -99,6 +99,14 @@ jobs:
           test ! -s /tmp/ssa-eq.stderr
           test ! -s /tmp/ssa-eq.stdout
           echo "SSA_FRESH_EQUIVALENCE_KERNEL_CHECKED"
+      - name: Regress mutual-section delta checker before differential sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          source scripts/verus_env.sh
+          rustup run "$verus_toolchain" cargo test -p vermilion_backend --bin vrml_check
+          echo "SSA_MUTUAL_DELTA_CHECKER_REGRESSIONS_PASSED"
       - name: Validate opt-in SSA against positive and negative differential oracles
         shell: bash
         env:
