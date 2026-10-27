@@ -414,6 +414,17 @@ jobs:
           print("SSA_AS_BYTES_LEAN_SOURCES_PRESERVED",
                 len(rows),"obligations",len(modules),"modules")
           PY
+      - name: Independently audit indexed SSA generated Lean dependency chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/audit_indexed_ssa_lean.py
+          python3 scripts/audit_indexed_ssa_lean.py \
+            --index .vermilion/dalek-provenance/ssa-target-lean-index.json \
+            --receipt .vermilion/dalek-provenance/ssa-index-execution.json \
+            --modules .vermilion/dalek-provenance/ssa-target-lean \
+            --output .vermilion/dalek-provenance/ssa-structural-audit.json
+          echo "SSA_SOURCE_KEYED_LEAN_STRUCTURE_AUDITED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -444,6 +455,7 @@ jobs:
             .vermilion/dalek-provenance/ssa-reconciliation.json
             .vermilion/dalek-provenance/ssa-index-execution.json
             .vermilion/dalek-provenance/ssa-target-lean-index.json
+            .vermilion/dalek-provenance/ssa-structural-audit.json
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
