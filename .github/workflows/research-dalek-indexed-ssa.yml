@@ -507,6 +507,34 @@ jobs:
             exit 1
           fi
           echo "SSA_87_SOURCE_KEYED_SEQUENCE_VCS_KERNEL_CHECKED"
+      - name: Kernel-check nine exact call-precondition VCs
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_call_preconditions.py
+          python3 scripts/prove_dalek_call_preconditions.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-call-preconditions.lean" \
+            --report "$out/ssa-call-preconditions-proofs.json"
+          source scripts/lean_env.sh
+          # Keep each proof tranche separate and reuse the already checked
+          # exact generated Specs.olean without changing any source goals.
+          if ! lean "$out/ssa-call-preconditions.lean" \
+            > "$out/ssa-preconditions.stdout" 2> "$out/ssa-preconditions.stderr"; then
+            echo "Source-keyed call-precondition proof compilation failed" >&2
+            tail -n 130 "$out/ssa-preconditions.stdout" >&2
+            tail -n 130 "$out/ssa-preconditions.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-preconditions.stdout" "$out/ssa-preconditions.stderr"; then
+            echo "Admission dependency in call-precondition proofs" >&2
+            exit 1
+          fi
+          echo "SSA_9_SOURCE_KEYED_CALL_PRECONDITIONS_KERNEL_CHECKED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -548,6 +576,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-sequence-bounds-proofs.json
             .vermilion/dalek-provenance/ssa-sequence-proofs.stdout
             .vermilion/dalek-provenance/ssa-sequence-proofs.stderr
+            .vermilion/dalek-provenance/ssa-call-preconditions.lean
+            .vermilion/dalek-provenance/ssa-call-preconditions-proofs.json
+            .vermilion/dalek-provenance/ssa-preconditions.stdout
+            .vermilion/dalek-provenance/ssa-preconditions.stderr
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
