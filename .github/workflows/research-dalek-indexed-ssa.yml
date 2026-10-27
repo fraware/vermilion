@@ -426,6 +426,31 @@ jobs:
             --output .vermilion/dalek-provenance/ssa-structural-audit.json
           python3 -m unittest discover -s tests -p test_indexed_ssa_lean_audit.py -v
           echo "SSA_SOURCE_KEYED_LEAN_STRUCTURE_AUDITED"
+      - name: Kernel-check 45 concrete as_bytes shift-bound VC proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_shift_bounds.py
+          python3 scripts/prove_dalek_shift_bounds.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-shift-bounds.lean" \
+            --report "$out/ssa-shift-bounds-proofs.json"
+          source scripts/lean_env.sh
+          # Generated Specs is shared by the exact VCs. Compile its pinned
+          # source into a shadow Lean import tree before checking the proofs.
+          mkdir -p .lake/build/lib/lean/generated/field_u64
+          lean --root=case-studies/dalek-lite \
+            -o .lake/build/lib/lean/generated/field_u64/Specs.olean \
+            case-studies/dalek-lite/generated/field_u64/Specs.lean \
+            > "$out/ssa-shift-specs.stdout" 2> "$out/ssa-shift-specs.stderr"
+          test ! -s "$out/ssa-shift-specs.stderr"
+          lean "$out/ssa-shift-bounds.lean" \
+            > "$out/ssa-shift-proofs.stdout" 2> "$out/ssa-shift-proofs.stderr"
+          test ! -s "$out/ssa-shift-proofs.stderr"
+          echo "SSA_45_SOURCE_KEYED_SHIFT_VCS_KERNEL_CHECKED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -457,6 +482,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-index-execution.json
             .vermilion/dalek-provenance/ssa-target-lean-index.json
             .vermilion/dalek-provenance/ssa-structural-audit.json
+            .vermilion/dalek-provenance/ssa-shift-bounds.lean
+            .vermilion/dalek-provenance/ssa-shift-bounds-proofs.json
+            .vermilion/dalek-provenance/ssa-shift-specs.stderr
+            .vermilion/dalek-provenance/ssa-shift-proofs.stderr
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
