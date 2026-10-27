@@ -535,6 +535,32 @@ jobs:
             exit 1
           fi
           echo "SSA_9_SOURCE_KEYED_CALL_PRECONDITIONS_KERNEL_CHECKED"
+      - name: Kernel-check exact compute_q source assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_compute_q_assertion.py
+          python3 scripts/prove_dalek_compute_q_assertion.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-compute-q-assertion.lean" \
+            --report "$out/ssa-compute-q-assertion.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-compute-q-assertion.lean" \
+            > "$out/ssa-compute-q-assertion.stdout" 2> "$out/ssa-compute-q-assertion.stderr"; then
+            echo "Source-keyed compute_q assertion Lean proof failed" >&2
+            tail -n 110 "$out/ssa-compute-q-assertion.stdout" >&2
+            tail -n 110 "$out/ssa-compute-q-assertion.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-compute-q-assertion.stdout" "$out/ssa-compute-q-assertion.stderr"; then
+            echo "Admission dependency in compute_q assertion proof" >&2
+            exit 1
+          fi
+          echo "SSA_COMPUTE_Q_ASSERT_5_KERNEL_CHECKED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -580,6 +606,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-call-preconditions-proofs.json
             .vermilion/dalek-provenance/ssa-preconditions.stdout
             .vermilion/dalek-provenance/ssa-preconditions.stderr
+            .vermilion/dalek-provenance/ssa-compute-q-assertion.lean
+            .vermilion/dalek-provenance/ssa-compute-q-assertion.json
+            .vermilion/dalek-provenance/ssa-compute-q-assertion.stdout
+            .vermilion/dalek-provenance/ssa-compute-q-assertion.stderr
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
