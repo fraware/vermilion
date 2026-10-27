@@ -92,7 +92,7 @@ def build(index_path: Path, root: Path, output: Path, report_path: Path) -> dict
                 lines += [
                     f'  have hlen_{state} : Vermilion.Seq.len {state} = {width} := by',
                     '    calc',
-                    f'      Vermilion.Seq.len {state} = Vermilion.Seq.len {prev} := by rw [{assumption}, Vermilion.Seq.len_update]',
+                    f'      Vermilion.Seq.len {state} = Vermilion.Seq.len {prev} := by rw [{assumption}, Vermilion.Seq.len_update] <;> rfl',
                     f'      _ = {width} := {previous}',
                 ]
             lines.append('  omega')
