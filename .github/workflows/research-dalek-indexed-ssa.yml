@@ -670,6 +670,12 @@ jobs:
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           out=".vermilion/dalek-provenance"
           python3 -m py_compile scripts/prove_dalek_bytes_packing_precondition.py
+          python3 tests/test_dalek_bytes_packing_native_guard.py \
+            --script scripts/prove_dalek_bytes_packing_precondition.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            > "$out/ssa-bytes-packing-integrity.stdout" \
+            2> "$out/ssa-bytes-packing-integrity.stderr"
           python3 scripts/prove_dalek_bytes_packing_precondition.py \
             --index "$out/ssa-target-lean-index.json" \
             --modules "$out/ssa-target-lean" \
@@ -1080,6 +1086,8 @@ jobs:
             .vermilion/dalek-provenance/ssa-bytes-packing-precondition.json
             .vermilion/dalek-provenance/ssa-bytes-packing-precondition.stdout
             .vermilion/dalek-provenance/ssa-bytes-packing-precondition.stderr
+            .vermilion/dalek-provenance/ssa-bytes-packing-integrity.stdout
+            .vermilion/dalek-provenance/ssa-bytes-packing-integrity.stderr
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
             case-studies/dalek-lite/generated/field_u64/Specs.lean
