@@ -663,6 +663,36 @@ jobs:
             exit 1
           fi
           echo "SSA_ASSERT47_SOURCE_KEYED_KERNEL_CHECKED"
+      - name: Kernel-check source-keyed bytes packing precondition 7_1
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_bytes_packing_precondition.py
+          python3 scripts/prove_dalek_bytes_packing_precondition.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-bytes-packing-precondition.lean" \
+            --report "$out/ssa-bytes-packing-precondition.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-bytes-packing-precondition.lean" \
+            --manifest "$out/ssa-bytes-packing-precondition-axioms-expected.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-bytes-packing-precondition.lean" \
+            > "$out/ssa-bytes-packing-precondition.stdout" 2> "$out/ssa-bytes-packing-precondition.stderr"; then
+            echo "Pinned Lean rejected source-keyed byte packing precondition" >&2
+            tail -n 160 "$out/ssa-bytes-packing-precondition.stdout" >&2
+            tail -n 160 "$out/ssa-bytes-packing-precondition.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-bytes-packing-precondition.stdout" "$out/ssa-bytes-packing-precondition.stderr"; then
+            echo "Admission dependency in source-keyed byte packing precondition" >&2
+            exit 1
+          fi
+          echo "SSA_BYTES_PACKING_PRECONDITION_7_1_KERNEL_CHECKED"
       - name: Kernel-check 87 source-keyed sequence-index bound proofs
         shell: bash
         run: |
@@ -937,7 +967,7 @@ jobs:
             exit 1
           fi
           echo "SSA_FIFTH_CARRY_ASSERT_22_KERNEL_CHECKED"
-      - name: Fail-closed transitive Lean axiom audit for 154 exact VCs
+      - name: Fail-closed transitive Lean axiom audit for 155 exact VCs
         shell: bash
         run: |
           set -euo pipefail
@@ -948,7 +978,7 @@ jobs:
             --index "$out/ssa-target-lean-index.json" \
             --root "$out" \
             --receipt "$out/ssa-axioms-audit.json"
-          echo "SSA_154_PROOFS_STANDARD_AXIOMS_ONLY"
+          echo "SSA_155_PROOFS_STANDARD_AXIOMS_ONLY"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -1046,6 +1076,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-limb-four-range.json
             .vermilion/dalek-provenance/ssa-limb-four-range.stdout
             .vermilion/dalek-provenance/ssa-limb-four-range.stderr
+            .vermilion/dalek-provenance/ssa-bytes-packing-precondition.lean
+            .vermilion/dalek-provenance/ssa-bytes-packing-precondition.json
+            .vermilion/dalek-provenance/ssa-bytes-packing-precondition.stdout
+            .vermilion/dalek-provenance/ssa-bytes-packing-precondition.stderr
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
             case-studies/dalek-lite/generated/field_u64/Specs.lean
