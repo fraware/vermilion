@@ -81,7 +81,7 @@ def generate(indexpath: Path, modules: Path, dest: Path, report: Path) -> None:
       norm_num at h0_high ⊢
       omega
     rw [hmod, Vermilion.Bits.shr_eq_div 64 {e0} 51 h0_nonneg h0_high]
-    have hdenom : (2 : Int) ^ (51 : Int).toNat = 2251799813685248 := by norm_num
+    have hdenom : (2 : Int) ^ (51 : Int).toNat = 2251799813685248 := by decide
     rw [hdenom]
     omega
   have h1_nonneg : 0 ≤ {e1} := assert_13.1
@@ -99,7 +99,7 @@ def generate(indexpath: Path, modules: Path, dest: Path, report: Path) -> None:
       norm_num at h1_high ⊢
       omega
     rw [hmod, Vermilion.Bits.shr_eq_div 64 {e1} 51 h1_nonneg h1_high]
-    have hdenom : (2 : Int) ^ (51 : Int).toNat = 2251799813685248 := by norm_num
+    have hdenom : (2 : Int) ^ (51 : Int).toNat = 2251799813685248 := by decide
     rw [hdenom]
     omega
   have hlimb2_nonneg : 0 ≤ {x2} :=
