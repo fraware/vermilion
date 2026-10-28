@@ -483,6 +483,36 @@ jobs:
             exit 1
           fi
           echo "SSA_45_SOURCE_KEYED_SHIFT_VCS_KERNEL_CHECKED"
+      - name: Kernel-check carry-times-19 source-keyed assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_carry_times19_range.py
+          python3 scripts/prove_dalek_carry_times19_range.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-carry-times19-range.lean" \
+            --report "$out/ssa-carry-times19-range.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-carry-times19-range.lean" \
+            --manifest "$out/ssa-carry-times19-range-axioms-expected.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-carry-times19-range.lean" \
+            > "$out/ssa-carry-times19-range.stdout" 2> "$out/ssa-carry-times19-range.stderr"; then
+            echo "Carry-times-19 proof failed in pinned Lean" >&2
+            tail -n 160 "$out/ssa-carry-times19-range.stdout" >&2
+            tail -n 160 "$out/ssa-carry-times19-range.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-carry-times19-range.stdout" "$out/ssa-carry-times19-range.stderr"; then
+            echo "Admission dependency detected in carry-times-19 proof" >&2
+            exit 1
+          fi
+          echo "SSA_CARRY_TIMES19_ASSERT_24_KERNEL_CHECKED"
       - name: Kernel-check 87 source-keyed sequence-index bound proofs
         shell: bash
         run: |
@@ -757,7 +787,7 @@ jobs:
             exit 1
           fi
           echo "SSA_FIFTH_CARRY_ASSERT_22_KERNEL_CHECKED"
-      - name: Fail-closed transitive Lean axiom audit for 148 exact VCs
+      - name: Fail-closed transitive Lean axiom audit for 149 exact VCs
         shell: bash
         run: |
           set -euo pipefail
@@ -768,7 +798,7 @@ jobs:
             --index "$out/ssa-target-lean-index.json" \
             --root "$out" \
             --receipt "$out/ssa-axioms-audit.json"
-          echo "SSA_148_PROOFS_STANDARD_AXIOMS_ONLY"
+          echo "SSA_149_PROOFS_STANDARD_AXIOMS_ONLY"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -842,6 +872,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-fifth-carry-range.json
             .vermilion/dalek-provenance/ssa-fifth-carry-range.stdout
             .vermilion/dalek-provenance/ssa-fifth-carry-range.stderr
+            .vermilion/dalek-provenance/ssa-carry-times19-range.lean
+            .vermilion/dalek-provenance/ssa-carry-times19-range.json
+            .vermilion/dalek-provenance/ssa-carry-times19-range.stdout
+            .vermilion/dalek-provenance/ssa-carry-times19-range.stderr
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
             case-studies/dalek-lite/generated/field_u64/Specs.lean
