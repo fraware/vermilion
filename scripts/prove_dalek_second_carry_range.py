@@ -77,7 +77,7 @@ def generate(index_path: Path, modules: Path, output: Path, report: Path):
       norm_num only [Int.reducePow] at hbase_high
       exact hbase_high
     rw [hmod, Vermilion.Bits.shr_eq_div 64 {BASE} 51 hbase hbase_high]
-    have hdenom : (2 : Int) ^ (51 : Int).toNat = 2251799813685248 := by norm_num
+    have hdenom : (2 : Int) ^ (51 : Int).toNat = 2251799813685248 := by decide
     rw [hdenom]
     omega
   have hlimb1_nonneg : 0 ≤ {X1} :=
