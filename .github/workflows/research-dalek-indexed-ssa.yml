@@ -613,6 +613,32 @@ jobs:
             exit 1
           fi
           echo "SSA_FIRST_CARRY_ASSERT_10_KERNEL_CHECKED"
+      - name: Kernel-check second source-keyed carry-addition range assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_second_carry_range.py
+          python3 scripts/prove_dalek_second_carry_range.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-second-carry-range.lean" \
+            --report "$out/ssa-second-carry-range.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-second-carry-range.lean" \
+            > "$out/ssa-second-carry-range.stdout" 2> "$out/ssa-second-carry-range.stderr"; then
+            echo "Second source-keyed carry-range Lean proof failed" >&2
+            tail -n 130 "$out/ssa-second-carry-range.stdout" >&2
+            tail -n 130 "$out/ssa-second-carry-range.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-second-carry-range.stdout" "$out/ssa-second-carry-range.stderr"; then
+            echo "Admission dependency in second carry-range Lean proof" >&2
+            exit 1
+          fi
+          echo "SSA_SECOND_CARRY_ASSERT_13_KERNEL_CHECKED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -670,6 +696,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-first-carry-range.json
             .vermilion/dalek-provenance/ssa-first-carry-range.stdout
             .vermilion/dalek-provenance/ssa-first-carry-range.stderr
+            .vermilion/dalek-provenance/ssa-second-carry-range.lean
+            .vermilion/dalek-provenance/ssa-second-carry-range.json
+            .vermilion/dalek-provenance/ssa-second-carry-range.stdout
+            .vermilion/dalek-provenance/ssa-second-carry-range.stderr
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
