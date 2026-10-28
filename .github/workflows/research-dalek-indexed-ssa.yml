@@ -561,6 +561,32 @@ jobs:
             exit 1
           fi
           echo "SSA_COMPUTE_Q_ASSERT_5_KERNEL_CHECKED"
+      - name: Kernel-check exact 51-bit mask unsigned-range assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_mask51_range.py
+          python3 scripts/prove_dalek_mask51_range.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-mask51-range.lean" \
+            --report "$out/ssa-mask51-range.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-mask51-range.lean" \
+            > "$out/ssa-mask51-range.stdout" 2> "$out/ssa-mask51-range.stderr"; then
+            echo "Source-keyed mask51 range proof failed in pinned Lean" >&2
+            tail -n 110 "$out/ssa-mask51-range.stdout" >&2
+            tail -n 110 "$out/ssa-mask51-range.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-mask51-range.stdout" "$out/ssa-mask51-range.stderr"; then
+            echo "Admission dependency in mask51 range proof" >&2
+            exit 1
+          fi
+          echo "SSA_MASK51_ASSERT_28_KERNEL_CHECKED"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -610,6 +636,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-compute-q-assertion.json
             .vermilion/dalek-provenance/ssa-compute-q-assertion.stdout
             .vermilion/dalek-provenance/ssa-compute-q-assertion.stderr
+            .vermilion/dalek-provenance/ssa-mask51-range.lean
+            .vermilion/dalek-provenance/ssa-mask51-range.json
+            .vermilion/dalek-provenance/ssa-mask51-range.stdout
+            .vermilion/dalek-provenance/ssa-mask51-range.stderr
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
