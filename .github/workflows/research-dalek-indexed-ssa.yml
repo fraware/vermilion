@@ -573,6 +573,36 @@ jobs:
             exit 1
           fi
           echo "SSA_LIMB_ONE_ASSERT_32_KERNEL_CHECKED"
+      - name: Kernel-check source-keyed indexed SSA second limb assertion 37
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_ssa_limb_two_range.py
+          python3 scripts/prove_dalek_ssa_limb_two_range.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-limb-two-range.lean" \
+            --report "$out/ssa-limb-two-range.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-limb-two-range.lean" \
+            --manifest "$out/ssa-limb-two-range-axioms-expected.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-limb-two-range.lean" \
+            > "$out/ssa-limb-two-range.stdout" 2> "$out/ssa-limb-two-range.stderr"; then
+            echo "Pinned Lean rejected source-keyed assert_37" >&2
+            tail -n 160 "$out/ssa-limb-two-range.stdout" >&2
+            tail -n 160 "$out/ssa-limb-two-range.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-limb-two-range.stdout" "$out/ssa-limb-two-range.stderr"; then
+            echo "Admission dependency in source-keyed assert_37" >&2
+            exit 1
+          fi
+          echo "SSA_ASSERT37_SOURCE_KEYED_KERNEL_CHECKED"
       - name: Kernel-check 87 source-keyed sequence-index bound proofs
         shell: bash
         run: |
@@ -847,7 +877,7 @@ jobs:
             exit 1
           fi
           echo "SSA_FIFTH_CARRY_ASSERT_22_KERNEL_CHECKED"
-      - name: Fail-closed transitive Lean axiom audit for 151 exact VCs
+      - name: Fail-closed transitive Lean axiom audit for 152 exact VCs
         shell: bash
         run: |
           set -euo pipefail
@@ -858,7 +888,7 @@ jobs:
             --index "$out/ssa-target-lean-index.json" \
             --root "$out" \
             --receipt "$out/ssa-axioms-audit.json"
-          echo "SSA_151_PROOFS_STANDARD_AXIOMS_ONLY"
+          echo "SSA_152_PROOFS_STANDARD_AXIOMS_ONLY"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -944,6 +974,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-limb-one-range.json
             .vermilion/dalek-provenance/ssa-limb-one-range.stdout
             .vermilion/dalek-provenance/ssa-limb-one-range.stderr
+            .vermilion/dalek-provenance/ssa-limb-two-range.lean
+            .vermilion/dalek-provenance/ssa-limb-two-range.json
+            .vermilion/dalek-provenance/ssa-limb-two-range.stdout
+            .vermilion/dalek-provenance/ssa-limb-two-range.stderr
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
             case-studies/dalek-lite/generated/field_u64/Specs.lean
