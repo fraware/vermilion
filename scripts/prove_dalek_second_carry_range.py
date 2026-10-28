@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 TARGET = "layer_a.backend.serial.u64.field.impl__16.as_bytes"
+PINNED_SOURCE_SHA256 = "722ade88657f727b1e01ff1980cb95037cd8ca15c9134b757f56cd5e6b5b641c"
 NAME = TARGET + ".assert_13"
 BLOCK = re.compile(
     r"(?ms)^-- vrml:begin (?P<name>[^\n ]+) (?P<hash>[0-9a-f]{16})\n"
@@ -34,11 +35,13 @@ def generate(index_path: Path, modules: Path, output: Path, report: Path):
     assert source.is_relative_to(modules.resolve())
     raw = source.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
+    assert digest == PINNED_SOURCE_SHA256, "Pinned Lean module changed"
     assert all(item["module_sha256"] == digest for item in index["obligations"])
     original = raw.decode("utf-8")
     blocks = list(BLOCK.finditer(original))
     assert len(blocks) == 156
     assert set(records) == {m["name"] for m in blocks}
+    assert all(m["hash"] == records[m["name"]] for m in blocks)
     matching = [m for m in blocks if m["name"] == NAME]
     assert len(matching) == 1
     match = matching[0]
