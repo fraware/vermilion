@@ -24,6 +24,7 @@ STAGES = {
     "ssa-first-carry-range": (1, "ssa-first-carry-range.stdout"),
     "ssa-second-carry-range": (1, "ssa-second-carry-range.stdout"),
     "ssa-third-carry-range": (1, "ssa-third-carry-range.stdout"),
+    "ssa-fourth-carry-range": (1, "ssa-fourth-carry-range.stdout"),
 }
 BLOCK = re.compile(
     r"(?ms)^-- vrml:begin (?P<name>[A-Za-z0-9_.]+) (?P<hash>[0-9a-f]{16})\n"
@@ -129,8 +130,8 @@ def verify(index: Path, root: Path, receipt: Path) -> dict:
         reports[stage] = parse_report(
             (root / stdout_name).read_text(encoding="utf-8"), set(proofs)
         )
-    if len(observed) != 146:
-        raise ValueError(f"expected 146 distinct accepted proofs, got {len(observed)}")
+    if len(observed) != 147:
+        raise ValueError(f"expected 147 distinct accepted proofs, got {len(observed)}")
     result = {
         "approved_axioms": sorted(APPROVED),
         "source_keyed_proofs_audited": len(observed),

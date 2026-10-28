@@ -697,7 +697,37 @@ jobs:
             exit 1
           fi
           echo "SSA_THIRD_CARRY_ASSERT_16_KERNEL_CHECKED"
-      - name: Fail-closed transitive Lean axiom audit for 146 exact VCs
+      - name: Kernel-check fourth source-keyed carry-addition range assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_fourth_carry_range.py
+          python3 scripts/prove_dalek_fourth_carry_range.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --modules "$out/ssa-target-lean" \
+            --output "$out/ssa-fourth-carry-range.lean" \
+            --report "$out/ssa-fourth-carry-range.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-fourth-carry-range.lean" \
+            --manifest "$out/ssa-fourth-carry-range-axioms-expected.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-fourth-carry-range.lean" \
+            > "$out/ssa-fourth-carry-range.stdout" 2> "$out/ssa-fourth-carry-range.stderr"; then
+            echo "Fourth source-keyed carry-range proof failed" >&2
+            tail -n 130 "$out/ssa-fourth-carry-range.stdout" >&2
+            tail -n 130 "$out/ssa-fourth-carry-range.stderr" >&2
+            exit 1
+          fi
+          if grep -Ei "declaration uses .*sorry|declaration has sorry|sorryax" \
+            "$out/ssa-fourth-carry-range.stdout" "$out/ssa-fourth-carry-range.stderr"; then
+            echo "Admission dependency in fourth carry-range proof" >&2
+            exit 1
+          fi
+          echo "SSA_FOURTH_CARRY_ASSERT_19_KERNEL_CHECKED"
+      - name: Fail-closed transitive Lean axiom audit for 147 exact VCs
         shell: bash
         run: |
           set -euo pipefail
@@ -708,7 +738,7 @@ jobs:
             --index "$out/ssa-target-lean-index.json" \
             --root "$out" \
             --receipt "$out/ssa-axioms-audit.json"
-          echo "SSA_146_PROOFS_STANDARD_AXIOMS_ONLY"
+          echo "SSA_147_PROOFS_STANDARD_AXIOMS_ONLY"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -774,6 +804,10 @@ jobs:
             .vermilion/dalek-provenance/ssa-third-carry-range.json
             .vermilion/dalek-provenance/ssa-third-carry-range.stdout
             .vermilion/dalek-provenance/ssa-third-carry-range.stderr
+            .vermilion/dalek-provenance/ssa-fourth-carry-range.lean
+            .vermilion/dalek-provenance/ssa-fourth-carry-range.json
+            .vermilion/dalek-provenance/ssa-fourth-carry-range.stdout
+            .vermilion/dalek-provenance/ssa-fourth-carry-range.stderr
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
             case-studies/dalek-lite/generated/field_u64/Specs.lean
