@@ -447,6 +447,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-shift-bounds.lean" \
             --report "$out/ssa-shift-bounds-proofs.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-shift-bounds.lean" \
+            --manifest "$out/ssa-shift-bounds-axioms-expected.json"
           source scripts/lean_env.sh
           # Generated Specs is shared by the exact VCs. Compile its pinned
           # source into a shadow Lean import tree before checking the proofs.
@@ -491,6 +495,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-sequence-bounds.lean" \
             --report "$out/ssa-sequence-bounds-proofs.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-sequence-bounds.lean" \
+            --manifest "$out/ssa-sequence-bounds-axioms-expected.json"
           source scripts/lean_env.sh
           # Reuse the exact Specs.olean already elaborated and checked by
           # the preceding 45-proof stage. Keep the 87 VCs isolated from it.
@@ -519,6 +527,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-call-preconditions.lean" \
             --report "$out/ssa-call-preconditions-proofs.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-call-preconditions.lean" \
+            --manifest "$out/ssa-call-preconditions-axioms-expected.json"
           source scripts/lean_env.sh
           # Keep each proof tranche separate and reuse the already checked
           # exact generated Specs.olean without changing any source goals.
@@ -547,6 +559,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-compute-q-assertion.lean" \
             --report "$out/ssa-compute-q-assertion.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-compute-q-assertion.lean" \
+            --manifest "$out/ssa-compute-q-assertion-axioms-expected.json"
           source scripts/lean_env.sh
           if ! lean "$out/ssa-compute-q-assertion.lean" \
             > "$out/ssa-compute-q-assertion.stdout" 2> "$out/ssa-compute-q-assertion.stderr"; then
@@ -573,6 +589,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-mask51-range.lean" \
             --report "$out/ssa-mask51-range.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-mask51-range.lean" \
+            --manifest "$out/ssa-mask51-range-axioms-expected.json"
           source scripts/lean_env.sh
           if ! lean "$out/ssa-mask51-range.lean" \
             > "$out/ssa-mask51-range.stdout" 2> "$out/ssa-mask51-range.stderr"; then
@@ -599,6 +619,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-first-carry-range.lean" \
             --report "$out/ssa-first-carry-range.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-first-carry-range.lean" \
+            --manifest "$out/ssa-first-carry-range-axioms-expected.json"
           source scripts/lean_env.sh
           if ! lean "$out/ssa-first-carry-range.lean" \
             > "$out/ssa-first-carry-range.stdout" 2> "$out/ssa-first-carry-range.stderr"; then
@@ -625,6 +649,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-second-carry-range.lean" \
             --report "$out/ssa-second-carry-range.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-second-carry-range.lean" \
+            --manifest "$out/ssa-second-carry-range-axioms-expected.json"
           source scripts/lean_env.sh
           if ! lean "$out/ssa-second-carry-range.lean" \
             > "$out/ssa-second-carry-range.stdout" 2> "$out/ssa-second-carry-range.stderr"; then
@@ -651,6 +679,10 @@ jobs:
             --modules "$out/ssa-target-lean" \
             --output "$out/ssa-third-carry-range.lean" \
             --report "$out/ssa-third-carry-range.json"
+          python3 scripts/audit_dalek_lean_axioms.py prepare \
+            --index "$out/ssa-target-lean-index.json" \
+            --source "$out/ssa-third-carry-range.lean" \
+            --manifest "$out/ssa-third-carry-range-axioms-expected.json"
           source scripts/lean_env.sh
           if ! lean "$out/ssa-third-carry-range.lean" \
             > "$out/ssa-third-carry-range.stdout" 2> "$out/ssa-third-carry-range.stderr"; then
@@ -665,6 +697,18 @@ jobs:
             exit 1
           fi
           echo "SSA_THIRD_CARRY_ASSERT_16_KERNEL_CHECKED"
+      - name: Fail-closed transitive Lean axiom audit for 146 exact VCs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/audit_dalek_lean_axioms.py
+          python3 -m unittest discover -s tests -p test_dalek_lean_axioms.py -v
+          out=".vermilion/dalek-provenance"
+          python3 scripts/audit_dalek_lean_axioms.py verify \
+            --index "$out/ssa-target-lean-index.json" \
+            --root "$out" \
+            --receipt "$out/ssa-axioms-audit.json"
+          echo "SSA_146_PROOFS_STANDARD_AXIOMS_ONLY"
       - name: Fail-closed exact-statement reconciliation against 5835-VC control
         shell: bash
         run: |
@@ -730,6 +774,9 @@ jobs:
             .vermilion/dalek-provenance/ssa-third-carry-range.json
             .vermilion/dalek-provenance/ssa-third-carry-range.stdout
             .vermilion/dalek-provenance/ssa-third-carry-range.stderr
+            .vermilion/dalek-provenance/ssa-axioms-audit.json
+            .vermilion/dalek-provenance/*-axioms-expected.json
+            case-studies/dalek-lite/generated/field_u64/Specs.lean
             .vermilion/dalek-provenance/ssa-target-lean/
             .vermilion/dalek-provenance/frontend.stderr
             .vermilion/dalek-provenance/lower.stderr
