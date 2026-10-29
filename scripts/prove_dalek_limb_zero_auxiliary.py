@@ -55,7 +55,9 @@ def generate(index_bytes,source_bytes,spec_bytes):
     have hhigh := Vermilion.Bits.band_lt 64 x 2251799813685247
     norm_num at hhigh
     omega
-  simp (disch := omega) [call_reduce_ensures_2, {writes},
+  have hreduce : tmp_.1 = layer_a.specs.field_specs_u64.spec_reduce self.1 := by
+    exact call_reduce_ensures_2
+  simp (disch := omega) [hreduce, {writes},
     layer_a.specs.field_specs_u64.reduce_with_q_spec,
     layer_a.specs.field_specs_u64.compute_unmasked_limbs,
     layer_a.specs.field_specs_u64.compute_q_spec,

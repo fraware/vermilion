@@ -20,7 +20,9 @@ def main(module,index,module_lean,specs):
     assert "Vermilion.Bits.band_nonneg 64 x 2251799813685247" in lean
     assert "Vermilion.Bits.band_lt 64 x 2251799813685247" in lean
     assert "have hlen" not in lean
-    assert "[call_reduce_ensures_2, " in lean
+    assert "have hreduce : tmp_.1 = layer_a.specs.field_specs_u64.spec_reduce self.1" in lean
+    assert "exact call_reduce_ensures_2" in lean
+    assert "[hreduce, " in lean
     count=1
     assert m.generate(raw,src,sp)==(lean,report);count+=1
     reject(s=src+b' ');count+=1
