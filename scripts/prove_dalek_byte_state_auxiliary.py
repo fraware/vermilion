@@ -53,15 +53,16 @@ def make(index,source,specs):
     for i in range(32):
         proof+=(f"  have hbyte_{i} : Vermilion.Seq.index s_ssa_32 {i} = Vermilion.Seq.index ({SYMB}) {i} := by\n"
                 f"    simp [{rew}, layer_a.specs.field_specs_u64.bit_arrange] <;> omega\n")
-    cases=" ∨ ".join(f"i = {i}" for i in range(32))
-    vars=" | ".join(f"h{i}" for i in range(32))
-    solves=" | ".join(f"exact hbyte_{i}" for i in range(32))
-    proof+=(f"  apply Vermilion.Seq.ext\n  · omega\n  · intro i hlo hhi\n"
-            f"    rw [hlen] at hhi\n    have hcases : {cases} := by omega\n"
-            f"    rcases hcases with {vars}\n    all_goals subst i\n"
-            f"    all_goals first | {solves}\n")
+    # IntervalCases is already imported by Vermilion.Obligations.
+    # Avoid a deeply nested 32-way disjunction and repeated subst
+    # elaboration, the native run 40793779763 heartbeat bottleneck.
+    proof+=("  apply Vermilion.Seq.ext\n  · omega\n  · intro i hlo hhi\n"
+            "    rw [hlen] at hhi\n"
+            "    interval_cases i <;> assumption\n")
     fq=TARGET+".vermilion_exact_byte_state_bridge"
-    lean=(header+"namespace "+TARGET+"\n\n"
+    # Bounded elaboration budget for one 32-case auxiliary diagnostic.
+    # No change to imported axioms, original VCs, or their axiom audit.
+    lean=(header+"set_option maxHeartbeats 2000000\n\n"+"namespace "+TARGET+"\n\n"
           +"theorem vermilion_exact_byte_state_bridge\n    "
           +"\n    ".join(params)+f" :\n    s_ssa_32 = {SYMB} := by\n"
           +proof+"\nend "+TARGET+"\n\n#print axioms "+fq+"\n")

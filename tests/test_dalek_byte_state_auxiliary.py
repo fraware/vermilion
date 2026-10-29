@@ -18,6 +18,9 @@ def main(index,module,specs):
     assert receipt["native_lean_accepted"] is False
     assert receipt["original_ensures_154_proven"] is False
     assert generated.count("#print axioms")==1
+    assert "interval_cases i <;> assumption" in generated
+    assert "have hcases" not in generated
+    assert "set_option maxHeartbeats 2000000" in generated
     count=1
     assert m.make(raw,src,definitions)==(generated,receipt);count+=1
     reject(raw,src+b"\n",definitions);count+=1
