@@ -69,11 +69,16 @@ verus_checkout="$(cd "$link" && pwd -P)"
 actual="$(git -C "$verus_checkout" rev-parse HEAD)"
 if [[ "$actual" != "$pin" ]]; then
   if git -C "$verus_checkout" diff --quiet; then
-    # The pin may live on any configured remote (older cache clones name
-    # ilyasergey/verus `fork`, not `origin`) — fetch them all.
-    git -C "$verus_checkout" checkout --quiet "$pin" \
-      || { git -C "$verus_checkout" fetch --quiet --all \
-             && git -C "$verus_checkout" checkout --quiet "$pin"; }
+    # Cache reuse across baseline and research pins needs the exact object.
+    # Some caches contain only the baseline remote; `--all` is insufficient.
+    if ! git -C "$verus_checkout" cat-file -e "${pin}^{commit}" 2>/dev/null; then
+      git -C "$verus_checkout" fetch --quiet --all
+    fi
+    if ! git -C "$verus_checkout" cat-file -e "${pin}^{commit}" 2>/dev/null; then
+      git -C "$verus_checkout" fetch --quiet "$verus_git" "$pin"
+    fi
+    git -C "$verus_checkout" cat-file -e "${pin}^{commit}"
+    git -C "$verus_checkout" checkout --quiet "$pin"
   else
     # Fail CLOSED: a wrong-rev checkout with local changes must not feed
     # the pipeline silently (measured cost: a whole-suite red herring —

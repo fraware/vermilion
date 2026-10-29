@@ -6,6 +6,7 @@ on:
       - research/dalek-cross-module-export-eval
     paths:
       - .github/workflows/research-dalek-matched-baseline.yml
+      - scripts/setup_verus.sh
   workflow_dispatch:
 
 permissions:
