@@ -699,6 +699,31 @@ jobs:
             exit 1
           fi
           echo "SSA_BYTES_PACKING_PRECONDITION_7_1_KERNEL_CHECKED"
+      - name: Diagnose final serialization byte-state bridge with pinned Lean
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_byte_state_auxiliary.py scripts/audit_dalek_byte_state_auxiliary.py
+          python3 scripts/prove_dalek_byte_state_auxiliary.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --module "$out/ssa-target-lean/field_u64/layer_a_backend_serial_u64_field_impl__16_as_bytes.lean" \
+            --specs "case-studies/dalek-lite/generated/field_u64/Specs.lean" \
+            --output "$out/ssa-byte-state-auxiliary.lean" \
+            --report "$out/ssa-byte-state-auxiliary.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-byte-state-auxiliary.lean" \
+            > "$out/ssa-byte-state-auxiliary.stdout" 2> "$out/ssa-byte-state-auxiliary.stderr"; then
+            echo "Auxiliary byte-state bridge rejected; original ensures_154 remains outstanding" >&2
+            tail -n 160 "$out/ssa-byte-state-auxiliary.stdout" >&2
+            tail -n 160 "$out/ssa-byte-state-auxiliary.stderr" >&2
+            exit 1
+          fi
+          python3 scripts/audit_dalek_byte_state_auxiliary.py \
+            --stdout "$out/ssa-byte-state-auxiliary.stdout" \
+            --receipt "$out/ssa-byte-state-auxiliary-axioms.json"
+          echo "AUXILIARY_BYTE_STATE_KERNEL_CHECKED_NOT_ORIGINAL_VC"
       - name: Kernel-check 87 source-keyed sequence-index bound proofs
         shell: bash
         run: |
@@ -1088,6 +1113,11 @@ jobs:
             .vermilion/dalek-provenance/ssa-bytes-packing-precondition.stderr
             .vermilion/dalek-provenance/ssa-bytes-packing-integrity.stdout
             .vermilion/dalek-provenance/ssa-bytes-packing-integrity.stderr
+            .vermilion/dalek-provenance/ssa-byte-state-auxiliary.lean
+            .vermilion/dalek-provenance/ssa-byte-state-auxiliary.json
+            .vermilion/dalek-provenance/ssa-byte-state-auxiliary.stdout
+            .vermilion/dalek-provenance/ssa-byte-state-auxiliary.stderr
+            .vermilion/dalek-provenance/ssa-byte-state-auxiliary-axioms.json
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
             case-studies/dalek-lite/generated/field_u64/Specs.lean
