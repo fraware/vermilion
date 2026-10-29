@@ -1,0 +1,343 @@
+name: Cross-module termination export acquisition (research)
+
+on:
+  push:
+    branches:
+      - research/dalek-cross-module-export-eval
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERMILION_RESEARCH_VERUS_PIN: "4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
+
+concurrency:
+  group: dalek-cross-module-export-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-source-provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate provenance analyzer
+        run: |
+          python3 -m py_compile scripts/audit_dalek_bv_provenance.py
+          python3 -m py_compile scripts/replay_dalek_bv_goals.py
+          python3 -m py_compile scripts/replay_dalek_bv_contexts.py
+          python3 -m py_compile scripts/replay_dalek_bv_full_blocks.py
+          python3 -m unittest discover -s tests -p test_dalek_bv_full_blocks.py -v
+          python3 -m unittest discover -s tests -p test_dalek_bv_context_replay.py -v
+          python3 scripts/audit_dalek_bv_provenance.py --help
+          python3 -m py_compile scripts/compare_dalek_bv_modes.py
+          python3 scripts/compare_dalek_bv_modes.py --help
+      - name: Install pinned Verus and Lean host prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld libc++-dev libc++abi-dev libgmp-dev \
+            cmake ninja-build pkg-config libssl-dev curl unzip zstd git
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | \
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Restore pinned native toolchain cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cache/vermilion/verus
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains
+            ~/.elan/toolchains
+            .lake
+            target
+            crates/vermilion_direct/target
+          key: native-v3-\${{ runner.os }}-\${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Cargo.lock', 'crates/vermilion_direct/Cargo.lock', 'scripts/setup_verus.sh', 'crates/vermilion_direct/src/lower.rs') }}
+          restore-keys: |
+            native-v3-\${{ runner.os }}-
+      - name: Build pinned Rust adapter and Lean generator
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          ./scripts/build.sh
+      - name: Capture pinned dalek source, VIR, SST, IR, and generated Lean
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          mkdir -p .vermilion/dalek-provenance
+          ./case-studies/dalek-lite/fetch_upstream.sh
+          ./scripts/setup_verus.sh
+          test "$(git -C .verus-checkout rev-parse HEAD)" = 4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248
+          repository="$PWD"
+          source scripts/verus_env.sh
+          rustup run "$verus_toolchain" rustc --edition=2021 \
+            --crate-name subtle --crate-type rlib \
+            case-studies/dalek-lite/subtle_stub.rs \
+            -o .vermilion/dalek-provenance/libsubtle_stub.rlib
+          VERUS_VIR_EXPORT="$repository/.vermilion/dalek-provenance/dalek-vir.bin" \
+            "$verus" case-studies/dalek-lite/layer_a.rs \
+            --crate-type=lib \
+            --extern "subtle=$repository/.vermilion/dalek-provenance/libsubtle_stub.rlib" \
+            --no-verify > .vermilion/dalek-provenance/frontend.stdout \
+                        2> .vermilion/dalek-provenance/frontend.stderr
+          VERMILION_BV_PROVENANCE=1 \
+            ./crates/vermilion_direct/target/release/vermilion_direct \
+            .vermilion/dalek-provenance/dalek-vir.bin \
+            --out .vermilion/dalek-provenance/dalek-ir.sexp \
+            > .vermilion/dalek-provenance/lower.stdout \
+            2> .vermilion/dalek-provenance/lower.stderr
+          source scripts/lean_env.sh
+          vrml_lake_build_if_stale vrml_gen Vermilion
+          ./.lake/build/bin/vrml_gen --mode per-function \
+            --generated-root case-studies/dalek-lite/generated \
+            .vermilion/dalek-provenance/dalek-ir.sexp \
+            > .vermilion/dalek-provenance/generator.stdout \
+            2> .vermilion/dalek-provenance/generator.stderr
+          python3 scripts/audit_dalek_bv_provenance.py \
+            --repo "$repository" \
+            --generated case-studies/dalek-lite/generated \
+            --trace .vermilion/dalek-provenance/lower.stderr \
+            --output .vermilion/dalek-provenance/provenance.json
+          git -C case-studies/dalek-lite/upstream rev-parse HEAD \
+            > .vermilion/dalek-provenance/upstream-pin.txt
+          test "$(cat .vermilion/dalek-provenance/upstream-pin.txt)" = \
+            de9ebf01599fedbbced28b938e2c36c538fe4ae5
+          (cd .vermilion/dalek-provenance &&
+            sha256sum dalek-vir.bin dalek-ir.sexp provenance.json > SHA256SUMS)
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import shutil
+          out=pathlib.Path(".vermilion/dalek-provenance")
+          observations=json.loads((out/"provenance.json").read_text())["observations"]
+          copied=set()
+          target=out/"selected-lean"
+          target.mkdir(exist_ok=True)
+          for item in observations:
+              source=pathlib.Path(item["generated_lean"]["lean_file"])
+              if source not in copied:
+                  shutil.copy2(source,target/source.name)
+                  copied.add(source)
+          print(f"Preserved {len(copied)} generated target Lean modules")
+          PY
+          # A second, source-identical pass disables ONLY the pinned
+          # Verus SST bit-vector constant simplifier. This must expose
+          # the source-level propositions to the Lean renderer.
+          VERMILION_NO_BV_SIMPLIFY=1 VERMILION_BV_PROVENANCE=1 \
+            ./crates/vermilion_direct/target/release/vermilion_direct \
+            .vermilion/dalek-provenance/dalek-vir.bin \
+            --out .vermilion/dalek-provenance/dalek-ir-no-bv-simplify.sexp \
+            > .vermilion/dalek-provenance/lower-unsimplified.stdout \
+            2> .vermilion/dalek-provenance/lower-unsimplified.stderr
+          ./.lake/build/bin/vrml_gen --mode per-function \
+            --generated-root case-studies/dalek-lite/generated-unsimplified \
+            .vermilion/dalek-provenance/dalek-ir-no-bv-simplify.sexp \
+            > .vermilion/dalek-provenance/generator-unsimplified.stdout \
+            2> .vermilion/dalek-provenance/generator-unsimplified.stderr
+          python3 scripts/audit_dalek_bv_provenance.py \
+            --repo "$repository" \
+            --generated case-studies/dalek-lite/generated-unsimplified \
+            --trace .vermilion/dalek-provenance/lower-unsimplified.stderr \
+            --output .vermilion/dalek-provenance/provenance-unsimplified.json
+          python3 scripts/compare_dalek_bv_modes.py \
+            .vermilion/dalek-provenance/provenance.json \
+            .vermilion/dalek-provenance/provenance-unsimplified.json \
+            --output .vermilion/dalek-provenance/mode-comparison.json
+          (cd .vermilion/dalek-provenance &&
+            sha256sum dalek-ir-no-bv-simplify.sexp \
+              provenance-unsimplified.json mode-comparison.json \
+              >> SHA256SUMS)
+          (cd .vermilion/dalek-provenance && sha256sum --check --strict --status SHA256SUMS)
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import shutil
+          out=pathlib.Path(".vermilion/dalek-provenance")
+          observations=json.loads((out/"provenance-unsimplified.json").read_text())["observations"]
+          copied=set()
+          target=out/"selected-lean-unsimplified"
+          target.mkdir(exist_ok=True)
+          for item in observations:
+              source=pathlib.Path(item["generated_lean"]["lean_file"])
+              if source not in copied:
+                  shutil.copy2(source,target/source.name)
+                  copied.add(source)
+          print(f"Preserved {len(copied)} unsimplified Lean modules")
+          PY
+      - name: Kernel-elaborate recovered recursive specification modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          source scripts/lean_env.sh
+          evidence="$PWD/.vermilion/dalek-provenance"
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          file=Path("case-studies/dalek-lite/generated/load8_lemmas/Specs.lean")
+          content=file.read_text()
+          match=re.search(r"(?m)^(?:noncomputable )?def \S*load8_at_or_version_rec\b",content)
+          assert match, ("Expected cross-module recursive spec definition absent",file)
+          suffix=content[match.end():].split("\n-- vrml:spec ",1)[0]
+          assert "termination_by " in suffix, (
+              "Recovered recursive spec missing a native Lean termination proof",file)
+          print("RECURSIVE_SPEC_DEFINITION_AND_TERMINATION_PRESENT",file)
+          PY
+          for stem in load8_lemmas to_nat_lemmas as_bytes_lemmas field_u64; do
+            file="case-studies/dalek-lite/generated/$stem/Specs.lean"
+            test -s "$file"
+            timeout --signal=TERM --kill-after=5s 240s lean -o "$evidence/$stem-Specs.olean" "$file" \
+              > "$evidence/$stem-specs.stdout" 2> "$evidence/$stem-specs.stderr"
+            test ! -s "$evidence/$stem-specs.stderr"
+            echo "KERNEL_ELABORATED_RECURSIVE_SPECS $stem"
+          done
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          stems=["load8_lemmas","to_nat_lemmas","as_bytes_lemmas","field_u64"]
+          digests={}
+          for stem in stems:
+            file=Path(f"case-studies/dalek-lite/generated/{stem}/Specs.lean")
+            digests[stem]=hashlib.sha256(file.read_bytes()).hexdigest()
+          out=Path(".vermilion/dalek-provenance/recursive-spec-kernel-audit.json")
+          out.write_text(json.dumps({"spec_sha256":digests,
+             "native_lean_elaborated":True,
+             "whole_case_study_verified":False},indent=2,sort_keys=True)+"\n")
+          PY
+      - name: Fail-closed audit of cross-module recursive export
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .verus-checkout rev-parse HEAD)" = 4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248
+          test "$(git -C .verus-checkout rev-parse HEAD^)" = 48600836424a79420589c56d86e720236a029811
+          test "$(git -C .verus-checkout diff --name-only HEAD^ HEAD)" = source/vir/src/ast_to_sst_func.rs
+          python3 - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          root=Path("case-studies/dalek-lite/generated")
+          manifests=sorted(root.glob("*.json"))
+          stems={p.stem for p in manifests}
+          expected_stems={p.name for p in Path("case-studies/dalek-lite/proofs").iterdir()
+                          if p.is_dir() and list(p.glob("*.lean"))}
+          assert len(stems)==len(expected_stems)==27 and stems==expected_stems, (
+              "Manifest/proof inventory drift",sorted(stems ^ expected_stems))
+          baseline=set("""layer_a.backend.serial.u64.field.impl__16.as_bytes
+          layer_a.backend.serial.u64.field.load8_at
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_bytes_as_nat_prefix_bounded
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_bytes_as_nat_prefix_chunk
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_bytes_seq_as_nat_equals_prefix
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_decomposition_prefix_rec
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_extract_byte_at_index
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_from_le_bytes
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_horner_to_prefix_step
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_prefix_div_extracts_byte
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_prefix_equal_when_bytes_match
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_prefix_equals_suffix_full
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_prefix_equals_suffix_partial
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_rec_suffix_divisible
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_suffix_zero_when_bytes_zero
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u64x4_from_le_bytes
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_eq_bytes_seq_as_nat
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_equals_rec
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_equals_suffix_64
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_first_byte_only
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_lower_bound
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_lt_pow2_255
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_mod_truncates
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_rec_bound
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_u8_32_as_nat_with_trailing_zeros
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_words64_from_bytes_to_nat_wide
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_words_as_nat_equals_bytes
+          layer_a.lemmas.common_lemmas.to_nat_lemmas.lemma_words_as_nat_upper_bound
+          layer_a.lemmas.field_lemmas.as_bytes_lemmas.lemma_is_negative_equals_parity
+          layer_a.lemmas.field_lemmas.as_bytes_lemmas.lemma_xor_sign_bit_preserves_y
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_load8_at_plus_fits_u64
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_load8_at_plus_version_is_spec
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_load8_at_plus_version_rec_is_bounded
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_load8_at_rec_version_is_exec
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_load8_at_versions_equivalent
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_load8_plus_ver_div_mod
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_load8_shift_mod
+          layer_a.lemmas.field_lemmas.load8_lemmas.lemma_spec_load8_at_fits_u64""".splitlines())
+          assert len(baseline)==38, "Baseline function inventory must be exact"
+          original_residual="layer_a.backend.serial.u64.field.impl__16.as_bytes"
+          refused={}
+          obligations={}
+          for manifest in manifests:
+            doc=json.loads(manifest.read_text())
+            assert doc["mode"]=="per-function", manifest
+            for entry in doc.get("refused", []):
+              name=entry["function"]
+              assert name not in refused or refused[name]==entry["message"]
+              refused[name]=entry["message"]
+            for entry in doc.get("obligations", []):
+              name=entry["name"]
+              assert name not in obligations, f"Duplicate obligation identity: {name}"
+              obligations[name]=entry["statement_hash"]
+          assert len(obligations)>=5215, (
+              "Obligations dropped relative to pinned baseline",len(obligations))
+          # A disappearing refusal is not evidence of recovery. Require
+          # corresponding emitted VCs for every formerly refused function.
+          recovered={}
+          for name in sorted(baseline-{original_residual}):
+            matches=[k for k in obligations if k.startswith(name+".")]
+            recovered[name]=len(matches)
+          missing=[name for name,count in recovered.items() if count==0]
+          assert not missing, ("Missing actual VCs for recovered functions",missing)
+          assert set(refused)=={original_residual}, (
+              "Unexpected remaining or disappeared refusals",sorted(refused))
+          assert "substitution budget" in refused[original_residual]
+          assert not any("termination check" in message for message in refused.values())
+          report={"verus_sha":"4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248",
+            "parent_verus_sha":"48600836424a79420589c56d86e720236a029811",
+            "manifest_count":len(manifests),
+            "obligation_count":len(obligations),
+            "unique_refused":len(refused),
+            "termination_refused":0,
+            "recovered_functions_with_emitted_vcs":len(recovered),
+            "recovered_obligations_by_function":recovered,
+            "remaining_refused":refused,
+            "whole_case_study_verified":False}
+          details=Path(".vermilion/dalek-provenance/experimental-vcs.json")
+          details.write_text(json.dumps({
+            "verus_sha":"4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248",
+            "source_sha":"de9ebf01599fedbbced28b938e2c36c538fe4ae5",
+            "source_keyed_obligations":obligations,
+            "refused_functions":refused,
+            "whole_case_study_verified":False},sort_keys=True,indent=2)+"\n")
+          out=Path(".vermilion/dalek-provenance/recursive-export-experiment.json")
+          out.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
+          print("EXPERIMENTAL_EXPORT_OBLIGATIONS",len(obligations),
+                "RECOVERED_FUNCTIONS",len(recovered),"REFUSALS",len(refused))
+          PY
+      - name: Preserve native export experiment evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cross-module-decreases-export-experiment
+          path: |
+            .vermilion/dalek-provenance/recursive-export-experiment.json
+            .vermilion/dalek-provenance/recursive-spec-kernel-audit.json
+            .vermilion/dalek-provenance/*-specs.stdout
+            .vermilion/dalek-provenance/*-specs.stderr
+            .vermilion/dalek-provenance/experimental-vcs.json
+            .vermilion/dalek-provenance/frontend.stderr
+            .vermilion/dalek-provenance/lower.stderr
+            .vermilion/dalek-provenance/generator.stderr
+            .vermilion/dalek-provenance/SHA256SUMS
+            .vermilion/dalek-provenance/dalek-vir.bin
+            .vermilion/dalek-provenance/dalek-ir.sexp
+            .vermilion/dalek-provenance/provenance.json
+            .vermilion/dalek-provenance/dalek-ir-no-bv-simplify.sexp
+            .vermilion/dalek-provenance/provenance-unsimplified.json
+            .vermilion/dalek-provenance/mode-comparison.json
+          if-no-files-found: warn
+          retention-days: 14
