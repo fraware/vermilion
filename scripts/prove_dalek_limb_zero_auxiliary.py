@@ -54,6 +54,14 @@ def generate(index_bytes,source_bytes,spec_bytes):
     have hhigh := Vermilion.Bits.band_lt 64 x 2251799813685247
     norm_num at hhigh
     omega
+  -- A 64-bit logical right shift already lies inside its unsigned modulus.
+  have shr_mod (x : Int) :
+      (Vermilion.Bits.shr 64 x 51) % 18446744073709551616 =
+        Vermilion.Bits.shr 64 x 51 := by
+    have hlow := Vermilion.Bits.shr_nonneg 64 x 51
+    have hhigh := Vermilion.Bits.shr_lt 64 x 51
+    norm_num at hhigh
+    omega
   have hreduce : layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs tmp_ =
       layer_a.specs.field_specs_u64.spec_reduce (layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs self) := by
     exact call_reduce_ensures_2
@@ -93,7 +101,7 @@ def generate(index_bytes,source_bytes,spec_bytes):
     layer_a.specs.field_specs_u64.compute_q_spec,
     layer_a.specs.field_specs_u64.compute_q_arr,
     layer_a.specs.field_specs_u64.mask51, Vermilion.Bits.shl,
-    masked_mod] <;> omega
+    masked_mod, shr_mod] <;> omega
 '''
     header=original.split('namespace '+TARGET,1)[0]
     if not header.startswith('import Vermilion.Obligations\nimport generated.field_u64.Specs\n'):

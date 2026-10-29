@@ -17,6 +17,10 @@ def main(module,index,module_lean,specs):
     assert report['source_to_lean_refinement_proven'] is False
     assert len(report['pinned_updates'])==10
     assert "have masked_mod (x : Int)" in lean
+    assert "have shr_mod (x : Int)" in lean
+    assert "Vermilion.Bits.shr_nonneg 64 x 51" in lean
+    assert "Vermilion.Bits.shr_lt 64 x 51" in lean
+    assert "masked_mod, shr_mod] <;> omega" in lean
     assert "Vermilion.Bits.band_nonneg 64 x 2251799813685247" in lean
     assert "Vermilion.Bits.band_lt 64 x 2251799813685247" in lean
     assert "have hlen0 : 0 < Vermilion.Seq.len (layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs tmp_)" in lean
