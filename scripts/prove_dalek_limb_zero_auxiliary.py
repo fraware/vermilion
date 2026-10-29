@@ -69,6 +69,8 @@ def generate(index_bytes,source_bytes,spec_bytes):
   rw [Vermilion.Seq.index_update_other limbs_ssa 0 _ 1 (by decide)] at hread59
   have hread61 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_61
   rw [Vermilion.Seq.index_update_same limbs_ssa_2 0 _ (by omega) (by omega)] at hread61
+  -- Close the read dependency while the original source equalities are still available.
+  rw [hread59, hread52] at hread61
   have hread66 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_66
   rw [Vermilion.Seq.index_update_other limbs_ssa_3 0 _ 2 (by decide)] at hread66
   have hread68 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_68
@@ -84,7 +86,7 @@ def generate(index_bytes,source_bytes,spec_bytes):
   have hread84 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_84
   rw [Vermilion.Seq.index_update_other limbs_ssa_9 0 _ 4 (by decide)] at hread84
   rw [hread84, hread82, hread80, hread75, hread73, hread68, hread66,
-      hread61, hread59, hread52, hreduce]
+      hread61, hreduce]
   simp (disch := omega) [
     layer_a.specs.field_specs_u64.reduce_with_q_spec,
     layer_a.specs.field_specs_u64.compute_unmasked_limbs,

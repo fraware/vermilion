@@ -29,6 +29,8 @@ def main(module,index,module_lean,specs):
     assert "Vermilion.Seq.index_update_same (layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs tmp_) 0" in lean
     assert "Vermilion.Seq.index_update_same limbs_ssa_2 0" in lean
     assert lean.count("Vermilion.Seq.index_update_other") == 8
+    assert "rw [hread59, hread52] at hread61" in lean
+    assert "hread61, hreduce]" in lean
     assert "rw [hread84, hread82, hread80, hread75, hread73, hread68, hread66," in lean
     count=1
     assert m.generate(raw,src,sp)==(lean,report);count+=1
