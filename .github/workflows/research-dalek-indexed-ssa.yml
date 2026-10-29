@@ -706,6 +706,11 @@ jobs:
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           out=".vermilion/dalek-provenance"
           python3 -m py_compile scripts/prove_dalek_byte_state_auxiliary.py scripts/audit_dalek_byte_state_auxiliary.py
+          python3 tests/test_dalek_byte_state_auxiliary.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --module "$out/ssa-target-lean/field_u64/layer_a_backend_serial_u64_field_impl__16_as_bytes.lean" \
+            --specs "case-studies/dalek-lite/generated/field_u64/Specs.lean" \
+            > "$out/ssa-byte-state-integrity.stdout" 2> "$out/ssa-byte-state-integrity.stderr"
           python3 scripts/prove_dalek_byte_state_auxiliary.py \
             --index "$out/ssa-target-lean-index.json" \
             --module "$out/ssa-target-lean/field_u64/layer_a_backend_serial_u64_field_impl__16_as_bytes.lean" \
@@ -1117,6 +1122,8 @@ jobs:
             .vermilion/dalek-provenance/ssa-byte-state-auxiliary.json
             .vermilion/dalek-provenance/ssa-byte-state-auxiliary.stdout
             .vermilion/dalek-provenance/ssa-byte-state-auxiliary.stderr
+            .vermilion/dalek-provenance/ssa-byte-state-integrity.stdout
+            .vermilion/dalek-provenance/ssa-byte-state-integrity.stderr
             .vermilion/dalek-provenance/ssa-byte-state-auxiliary-axioms.json
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
