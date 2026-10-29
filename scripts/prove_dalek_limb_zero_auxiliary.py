@@ -57,7 +57,10 @@ def generate(index_bytes,source_bytes,spec_bytes):
     omega
   have hreduce : tmp_.1 = layer_a.specs.field_specs_u64.spec_reduce self.1 := by
     exact call_reduce_ensures_2
-  simp (disch := omega) [hreduce, {writes},
+  have hlen_reduced : Vermilion.Seq.len (layer_a.specs.field_specs_u64.spec_reduce self.1) = 5 := by
+    rw [← hreduce]
+    exact call_reduce_ensures_0
+  simp (disch := omega) [hlen_reduced, hreduce, {writes},
     layer_a.specs.field_specs_u64.reduce_with_q_spec,
     layer_a.specs.field_specs_u64.compute_unmasked_limbs,
     layer_a.specs.field_specs_u64.compute_q_spec,

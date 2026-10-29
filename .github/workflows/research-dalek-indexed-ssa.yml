@@ -250,6 +250,9 @@ jobs:
             sha256sum dalek-ir-no-bv-simplify.sexp \
               provenance-unsimplified.json mode-comparison.json \
               >> SHA256SUMS)
+          (cd .vermilion/dalek-provenance &&
+            sha256sum --check --strict --status SHA256SUMS)
+          echo 'PINNED_PRIMARY_ACQUISITION_SHA256_VERIFIED'
           python3 - <<'PY'
           import json
           import pathlib
@@ -1171,5 +1174,11 @@ jobs:
             .vermilion/dalek-provenance/lower.stderr
             .vermilion/dalek-provenance/generator.stderr
             .vermilion/dalek-provenance/SHA256SUMS
+            .vermilion/dalek-provenance/dalek-vir.bin
+            .vermilion/dalek-provenance/dalek-ir.sexp
+            .vermilion/dalek-provenance/provenance.json
+            .vermilion/dalek-provenance/dalek-ir-no-bv-simplify.sexp
+            .vermilion/dalek-provenance/provenance-unsimplified.json
+            .vermilion/dalek-provenance/mode-comparison.json
           if-no-files-found: warn
           retention-days: 14
