@@ -49,22 +49,11 @@ jobs:
           key: native-v3-Linux-dalek-matched-baseline
           restore-keys: |
             native-v3-Linux-
-      - name: Select baseline Verus pin in ephemeral CI workspace only
+      - name: Assert production baseline pin and no research override
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          script = Path("scripts/setup_verus.sh")
-          source = script.read_text()
-          old='pin="4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"'
-          new='pin="48600836424a79420589c56d86e720236a029811"'
-          assert source.count(old)==1
-          source=source.replace(old,new)
-          assert source.count("verus-cross-module-export-prototype")==1
-          source=source.replace("verus-cross-module-export-prototype","verus-cross-module-baseline-48600836")
-          script.write_text(source)
-          PY
           grep '^pin="48600836424a79420589c56d86e720236a029811"$' scripts/setup_verus.sh
+          test -z "${VERMILION_RESEARCH_VERUS_PIN:-}"
       - name: Build baseline native Rust adapter and Lean generator
         run: |
           set -euo pipefail
@@ -141,6 +130,7 @@ jobs:
           PY
           (cd .vermilion/matched-baseline &&
              sha256sum baseline-vcs.json dalek-vir.bin dalek-ir.sexp > SHA256SUMS)
+          (cd .vermilion/matched-baseline && sha256sum --check --strict --status SHA256SUMS)
       - name: Preserve independently replayable baseline receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -152,5 +142,7 @@ jobs:
             .vermilion/matched-baseline/lower.stderr
             .vermilion/matched-baseline/generator.stderr
             .vermilion/matched-baseline/SHA256SUMS
+            .vermilion/matched-baseline/dalek-vir.bin
+            .vermilion/matched-baseline/dalek-ir.sexp
           if-no-files-found: warn
           retention-days: 14

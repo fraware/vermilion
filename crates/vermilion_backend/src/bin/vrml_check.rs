@@ -705,14 +705,16 @@ fn delta_module(
         .find(|(_, line)| line.starts_with("namespace "))
         .map(|(start, _)| start)
         .unwrap_or(generated.len());
-    // Evidence blocks (per-file mode) sit before the first namespace, so
-    // they are already part of this preamble — their loud `sorry`
-    // placeholders let this *contingent* machine attempt elaborate; the
-    // checker independently rejects every unresolved evidence record. The
-    // preamble's `section` opener must then be re-closed at the end.
+    // Evidence instances live in a section spanning the obligation blocks;
+    // the delta must close that section after the selected obligations.
+    // A bare `section` search is unsound here: recursive specifications also
+    // render completely CLOSED sections around `mutual` declarations, and
+    // appending another `end` makes an otherwise valid VC fail to elaborate.
+    // The evidence attribute identifies exactly the distinct section emitted
+    // by renderModule for unresolved class dictionaries.
     let has_evidence_section = generated[..preamble_end]
         .lines()
-        .any(|line| line == "section");
+        .any(|line| line.starts_with("@[vrml_evidence] "));
     let mut source = generated[..preamble_end].to_owned();
     let mut remapped = Vec::new();
     let mut index = 0;
@@ -740,6 +742,51 @@ fn delta_module(
         source.push_str("end\n");
     }
     (source, remapped)
+}
+
+#[cfg(test)]
+mod delta_scope_regressions {
+    use super::*;
+
+    // Closed sections around mutually recursive spec definitions must not
+    // trigger a second unmatched `end` when building a checking delta.
+    #[test]
+    fn mutual_spec_section_is_already_closed() {
+        let generated = "import Vermilion.Obligations\nsection\nopen Classical\nmutual\n\
+            noncomputable def A.is_even : Prop := True\n\
+            noncomputable def A.is_odd : Prop := False\nend\nend\n\
+            namespace A.check\nend A.check\n";
+        let (delta, records) = delta_module(generated, &[]);
+        assert!(records.is_empty());
+        assert_eq!(delta.lines().filter(|line| *line == "end").count(), 2);
+        assert!(delta.ends_with("end\nend\n"));
+    }
+
+    // An evidence instance opens the section that remains in scope over
+    // generated obligations. The delta must retain that single closing end.
+    #[test]
+    fn evidence_section_is_closed_once() {
+        let generated = "import Vermilion.Obligations\nsection\n\
+            @[vrml_evidence] noncomputable local instance x : Decidable True := by\n\
+              sorry\nnamespace A.check\nend A.check\n";
+        let (delta, records) = delta_module(generated, &[]);
+        assert!(records.is_empty());
+        assert!(delta.ends_with("end\n"));
+        assert_eq!(delta.lines().filter(|line| *line == "end").count(), 1);
+    }
+
+    #[test]
+    fn mutual_and_evidence_sections_are_independent() {
+        let generated = "section\nopen Classical\nmutual\n\
+            noncomputable def A.even : Prop := True\n\
+            noncomputable def A.odd : Prop := False\nend\nend\n\
+            section\n@[vrml_evidence] noncomputable local instance x : Decidable True := by\n\
+              sorry\nnamespace A.check\nend A.check\n";
+        let (delta, records) = delta_module(generated, &[]);
+        assert!(records.is_empty());
+        assert_eq!(delta.lines().filter(|line| *line == "end").count(), 3);
+        assert!(delta.ends_with("end\n"));
+    }
 }
 
 /// One generated Lean file's worth of obligations: the whole module in

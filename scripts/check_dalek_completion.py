@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Fail-closed dalek-lite full-cone acceptance; negative-control mode is NOT proof.
+"""Fail-closed dalek-lite full-cone audit; negative-control mode is not proof.
 
-A source-to-Lean proof requires a fresh manifest set, no refused functions,
-no 'sorry' / 'admit' in tracked twin files, and independent successful
-vrml_check --twin-check on *every* manifest. Do not equate an isolated
-six- or two-theorem research certificate with this acceptance gate.
+Full acceptance requires fresh manifests, no refusals, no tracked admissions,
+native proof-twin checks, and a declaration-level Lean axiom-dependency audit.
+This gate audits source-to-Lean obligations, not translator semantics.
 """
 from __future__ import annotations
 import argparse
@@ -14,14 +13,75 @@ import re
 import subprocess
 import sys
 
-ADMIT = re.compile(r"(?m)^\s*(?:sorry|admit)\s*(?:--[^\n]*)?$")
+from lean_admission_scan import admission_positions
+from audit_lean_axioms import audit_proof_unit
+
+
+# Complete dalek-lite Layer Set A inventory, pinned from 27 tracked proof
+# subdirectories. Any expansion or contraction needs an explicit review.
+EXPECTED_MANIFEST_STEMS = frozenset([
+    "add_lemmas",
+    "as_bytes_lemmas",
+    "bit_lemmas",
+    "common_lemmas_mul_lemmas",
+    "compute_q_lemmas",
+    "div_mod_lemmas",
+    "field_lemmas_mul_lemmas",
+    "field_specs",
+    "field_specs_u64",
+    "field_u64",
+    "from_bytes_lemmas",
+    "layer_a",
+    "limbs_to_bytes_lemmas",
+    "load8_lemmas",
+    "mask_lemmas",
+    "negate_lemmas",
+    "number_theory_lemmas",
+    "pow2_51_lemmas",
+    "pow2k_lemmas",
+    "pow_lemmas",
+    "primality_specs",
+    "reduce_lemmas",
+    "shift_lemmas",
+    "sum_lemmas",
+    "to_bytes_reduction_lemmas",
+    "to_nat_lemmas",
+    "u64_5_as_nat_lemmas",
+])
+BASELINE_OBLIGATIONS = 5215
+
+
+def validate_full_scope(generated: Path, proofs: Path, result: dict) -> bool:
+    actual = {p.stem for p in generated.glob("*.json")}
+    if actual != EXPECTED_MANIFEST_STEMS:
+        missing = sorted(EXPECTED_MANIFEST_STEMS - actual)
+        extra = sorted(actual - EXPECTED_MANIFEST_STEMS)
+        result["problems"].append(
+            f"incomplete dalek-lite manifest inventory: missing={missing}; extra={extra}"
+        )
+        return False
+    if result["obligation_count"] < BASELINE_OBLIGATIONS:
+        result["problems"].append(
+            f"dalek-lite obligation inventory shrank below {BASELINE_OBLIGATIONS}: "
+            f"{result['obligation_count']}; review scope or the acquisition pipeline"
+        )
+        return False
+    empty = [stem for stem in sorted(EXPECTED_MANIFEST_STEMS)
+             if not (proofs / stem).is_dir()
+             or not any((proofs / stem).glob("*.lean"))]
+    if empty:
+        result["problems"].append(f"missing dalek-lite tracked proof directories: {empty}")
+        return False
+    result["scope_checked"] = True
+    return True
 
 
 def audit(generated: Path, proofs: Path) -> dict:
-    result = dict(accepted=False, kernel_checked=False, status="INCOMPLETE",
+    result = dict(accepted=False, kernel_checked=False, axiom_dependencies_audited=False,
+                  status="INCOMPLETE",
                   manifest_count=0, obligation_count=0, refused_count=0, refused_records_count=0,
                   tracked_admission_count=0, refused_functions=[],
-                  tracked_admissions=[], problems=[])
+                  tracked_admissions=[], scope_checked=False, problems=[])
     if not generated.is_dir():
         result["problems"].append(f"missing generated directory: {generated}")
         return result
@@ -98,11 +158,17 @@ def audit(generated: Path, proofs: Path) -> dict:
         except OSError as err:
             result["problems"].append(f"unreadable proof twin {proof}: {err}")
             continue
-        for marker in ADMIT.finditer(source):
+        try:
+            admissions = admission_positions(source)
+        except ValueError as error:
+            result["problems"].append(f"cannot scan Lean proof {proof}: {error}")
+            continue
+        for line, token in admissions:
             result["tracked_admission_count"] += 1
             result["tracked_admissions"].append({
                 "path": str(proof),
-                "line": source.count("\n", 0, marker.start()) + 1,
+                "line": line,
+                "token": token,
             })
     return result
 
@@ -114,6 +180,8 @@ def complete(generated: Path, proofs: Path, checker: Path | None,
         return result
     if generated.name != "generated":
         result["problems"].append("full twin certification requires canonical generated/ path")
+        return result
+    if not validate_full_scope(generated, proofs, result):
         return result
     if (checker is None or not checker.is_file()
         or sync_probe is None or not sync_probe.is_file()):
@@ -142,9 +210,37 @@ def complete(generated: Path, proofs: Path, checker: Path | None,
                 f"native twin failure at {manifest}: exit={verdict.returncode}; stderr={verdict.stderr[:1000]}"
             )
             return result
-    result["accepted"] = True
+    # Lean accepts 'sorry' and axioms as proof terms; an exit-0 native
+    # checker alone cannot certify the absence of unacceptable dependencies.
+    # Retain its receipt but FAIL CLOSED until a declaration-level axiom audit
+    # is implemented and independently validated.
     result["kernel_checked"] = True
-    result["status"] = "ALL_GENERATED_TWINS_NATIVE_CHECKED"
+    units: dict[Path, set[str]] = {}
+    for manifest in sorted(generated.glob("*.json")):
+        doc = json.loads(manifest.read_text(encoding="utf-8"))
+        for row in doc["obligations"]:
+            generated_unit = row.get("lean_file") or doc.get("lean_file")
+            if not isinstance(generated_unit, str) or "/generated/" not in generated_unit:
+                result["problems"].append(f"invalid generated unit path: {generated_unit}")
+                return result
+            twin = Path(generated_unit.replace("/generated/", "/proofs/", 1))
+            if not twin.is_file():
+                result["problems"].append(f"missing proof unit for axiom audit: {twin}")
+                return result
+            units.setdefault(twin, set()).add(row["name"])
+    if not units:
+        result["problems"].append("no theorem units for axiom audit")
+        return result
+    result["axiom_audited_units"] = 0
+    for file, names in sorted(units.items()):
+        passed, receipt = audit_proof_unit(file, sorted(names))
+        if not passed:
+            result["problems"].append(receipt)
+            return result
+        result["axiom_audited_units"] += 1
+    result["axiom_dependencies_audited"] = True
+    result["accepted"] = True
+    result["status"] = "ALL_GENERATED_TWINS_NATIVE_AND_AXIOMS_CHECKED"
     return result
 
 

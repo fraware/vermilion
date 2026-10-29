@@ -1,0 +1,53 @@
+name: Native indexed Seq.map model and registry
+
+on:
+  push:
+    branches:
+      - contrib/vstd-seq-indexed-map-20261025
+  pull_request:
+    paths:
+      - lean/Vermilion/Vstd/SeqLib.lean
+      - lean/Vermilion/Vstd/Registry.lean
+      - lean/Vermilion/Vstd/Probes.lean
+      - .github/workflows/vstd-seq-map-check.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  model-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Lean and mathlib build prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zstd curl git clang lld libgmp-dev
+          if ! command -v elan >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+              sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Restore pinned native Lean cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.elan/toolchains
+            ~/.cache/vermilion/verus
+            .lake
+          key: native-v3-Linux-seq-indexed-map
+          restore-keys: |
+            native-v3-Linux-
+      - name: Rebuild actual registry and native indexed-map probes
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$HOME/.cargo/bin:$PATH"
+          lake exe cache get
+          lake build Vermilion.Vstd.Probes
+          lake env lean lean/Vermilion/Vstd/Probes.lean

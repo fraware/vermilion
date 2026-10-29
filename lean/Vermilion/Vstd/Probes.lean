@@ -27,6 +27,17 @@ example :
     Vermilion.Seq.mapWithIndex ([] : Vermilion.Seq Int)
       (fun i x => i + x) = ([] : Vermilion.Seq Int) := by decide
 
+/- Reordering or losing the index would change the callback's result. -/
+example :
+    Vermilion.Seq.mapWithIndex ([5, 2, 9] : Vermilion.Seq Int)
+      (fun i x => 2 * i + x) = ([5, 4, 13] : Vermilion.Seq Int) := by decide
+
+/- The mirror supports a result type distinct from the element type. -/
+example :
+    Vermilion.Seq.mapWithIndex ([true, false] : Vermilion.Seq Bool)
+      (fun i x => if i = 0 then x else !x) =
+      ([true, true] : Vermilion.Seq Bool) := by decide
+
 /- Kernel-checked recursive subrange-tail decrease used by dalek load8. -/
 example (xs : Vermilion.Seq Int) (h : xs.len ≠ 0) :
     (xs.subrange 1 xs.len).len < xs.len :=

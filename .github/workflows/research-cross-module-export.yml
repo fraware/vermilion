@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  VERMILION_RESEARCH_VERUS_PIN: "4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248"
+
 concurrency:
   group: dalek-cross-module-export-\${{ github.ref }}
   cancel-in-progress: true
@@ -71,6 +74,7 @@ jobs:
           mkdir -p .vermilion/dalek-provenance
           ./case-studies/dalek-lite/fetch_upstream.sh
           ./scripts/setup_verus.sh
+          test "$(git -C .verus-checkout rev-parse HEAD)" = 4b030e0a8268ed4c0fd3ee8cb2a5356e6535f248
           repository="$PWD"
           source scripts/verus_env.sh
           rustup run "$verus_toolchain" rustc --edition=2021 \
@@ -150,6 +154,7 @@ jobs:
             sha256sum dalek-ir-no-bv-simplify.sexp \
               provenance-unsimplified.json mode-comparison.json \
               >> SHA256SUMS)
+          (cd .vermilion/dalek-provenance && sha256sum --check --strict --status SHA256SUMS)
           python3 - <<'PY'
           import json
           import pathlib
@@ -328,5 +333,11 @@ jobs:
             .vermilion/dalek-provenance/lower.stderr
             .vermilion/dalek-provenance/generator.stderr
             .vermilion/dalek-provenance/SHA256SUMS
+            .vermilion/dalek-provenance/dalek-vir.bin
+            .vermilion/dalek-provenance/dalek-ir.sexp
+            .vermilion/dalek-provenance/provenance.json
+            .vermilion/dalek-provenance/dalek-ir-no-bv-simplify.sexp
+            .vermilion/dalek-provenance/provenance-unsimplified.json
+            .vermilion/dalek-provenance/mode-comparison.json
           if-no-files-found: warn
           retention-days: 14
