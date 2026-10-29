@@ -729,6 +729,37 @@ jobs:
             --stdout "$out/ssa-byte-state-auxiliary.stdout" \
             --receipt "$out/ssa-byte-state-auxiliary-axioms.json"
           echo "AUXILIARY_BYTE_STATE_KERNEL_CHECKED_NOT_ORIGINAL_VC"
+      - name: Diagnose first final-reduction limb with pinned Lean
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
+          out=".vermilion/dalek-provenance"
+          python3 -m py_compile scripts/prove_dalek_limb_zero_auxiliary.py tests/test_dalek_limb_zero_auxiliary.py scripts/audit_dalek_limb_zero_auxiliary.py
+          python3 tests/test_dalek_limb_zero_auxiliary.py \
+            --module scripts/prove_dalek_limb_zero_auxiliary.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --module-lean "$out/ssa-target-lean/field_u64/layer_a_backend_serial_u64_field_impl__16_as_bytes.lean" \
+            --specs "case-studies/dalek-lite/generated/field_u64/Specs.lean" \
+            > "$out/ssa-limb-zero-integrity.stdout" 2> "$out/ssa-limb-zero-integrity.stderr"
+          python3 scripts/prove_dalek_limb_zero_auxiliary.py \
+            --index "$out/ssa-target-lean-index.json" \
+            --module "$out/ssa-target-lean/field_u64/layer_a_backend_serial_u64_field_impl__16_as_bytes.lean" \
+            --specs "case-studies/dalek-lite/generated/field_u64/Specs.lean" \
+            --output "$out/ssa-limb-zero-auxiliary.lean" \
+            --receipt "$out/ssa-limb-zero-auxiliary.json"
+          source scripts/lean_env.sh
+          if ! lean "$out/ssa-limb-zero-auxiliary.lean" \
+            > "$out/ssa-limb-zero-auxiliary.stdout" 2> "$out/ssa-limb-zero-auxiliary.stderr"; then
+            echo "First limb reduction equality not accepted by Lean" >&2
+            tail -n 150 "$out/ssa-limb-zero-auxiliary.stdout" >&2
+            tail -n 150 "$out/ssa-limb-zero-auxiliary.stderr" >&2
+            exit 1
+          fi
+          python3 scripts/audit_dalek_limb_zero_auxiliary.py \
+            --stdout "$out/ssa-limb-zero-auxiliary.stdout" \
+            --receipt "$out/ssa-limb-zero-auxiliary-axioms.json"
+          echo "LIMB_ZERO_AUXILIARY_KERNEL_CHECKED_NOT_ORIGINAL_VC"
       - name: Kernel-check 87 source-keyed sequence-index bound proofs
         shell: bash
         run: |
@@ -1125,6 +1156,13 @@ jobs:
             .vermilion/dalek-provenance/ssa-byte-state-integrity.stdout
             .vermilion/dalek-provenance/ssa-byte-state-integrity.stderr
             .vermilion/dalek-provenance/ssa-byte-state-auxiliary-axioms.json
+            .vermilion/dalek-provenance/ssa-limb-zero-auxiliary.lean
+            .vermilion/dalek-provenance/ssa-limb-zero-auxiliary.json
+            .vermilion/dalek-provenance/ssa-limb-zero-auxiliary.stdout
+            .vermilion/dalek-provenance/ssa-limb-zero-auxiliary.stderr
+            .vermilion/dalek-provenance/ssa-limb-zero-integrity.stdout
+            .vermilion/dalek-provenance/ssa-limb-zero-integrity.stderr
+            .vermilion/dalek-provenance/ssa-limb-zero-auxiliary-axioms.json
             .vermilion/dalek-provenance/ssa-axioms-audit.json
             .vermilion/dalek-provenance/*-axioms-expected.json
             case-studies/dalek-lite/generated/field_u64/Specs.lean
