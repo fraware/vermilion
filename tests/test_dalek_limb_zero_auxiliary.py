@@ -16,6 +16,11 @@ def main(module,index,module_lean,specs):
     assert report['original_ensures_154_proven'] is False
     assert report['source_to_lean_refinement_proven'] is False
     assert len(report['pinned_updates'])==10
+    assert "have masked_mod (x : Int)" in lean
+    assert "Vermilion.Bits.band_nonneg 64 x 2251799813685247" in lean
+    assert "Vermilion.Bits.band_lt 64 x 2251799813685247" in lean
+    assert "have hlen" not in lean
+    assert "[call_reduce_ensures_2, " in lean
     count=1
     assert m.generate(raw,src,sp)==(lean,report);count+=1
     reject(s=src+b' ');count+=1

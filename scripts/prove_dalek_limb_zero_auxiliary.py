@@ -48,14 +48,20 @@ def generate(index_bytes,source_bytes,spec_bytes):
     target=f'layer_a.specs.field_specs_u64.reduce_with_q_spec ({reduced}) (layer_a.specs.field_specs_u64.compute_q_spec ({reduced}))'
     goal=f'Vermilion.Seq.index limbs_ssa_10 0 = Vermilion.Seq.index ({target}) 0'
     writes=', '.join('assume_'+str(n) for n in reversed(ASSUMES))
-    proof=f'''  have hlen : Vermilion.Seq.len limbs_ssa_10 = 5 := by
-    simp [{writes}, call_reduce_ensures_0]
-  simp (disch := omega) [←call_reduce_ensures_2, {writes},
+    proof=f'''  have masked_mod (x : Int) :
+      (Vermilion.Bits.band 64 x 2251799813685247) % 18446744073709551616 =
+        Vermilion.Bits.band 64 x 2251799813685247 := by
+    have hlow := Vermilion.Bits.band_nonneg 64 x 2251799813685247
+    have hhigh := Vermilion.Bits.band_lt 64 x 2251799813685247
+    norm_num at hhigh
+    omega
+  simp (disch := omega) [call_reduce_ensures_2, {writes},
     layer_a.specs.field_specs_u64.reduce_with_q_spec,
     layer_a.specs.field_specs_u64.compute_unmasked_limbs,
     layer_a.specs.field_specs_u64.compute_q_spec,
     layer_a.specs.field_specs_u64.compute_q_arr,
-    layer_a.specs.field_specs_u64.mask51, Vermilion.Bits.shl] <;> omega
+    layer_a.specs.field_specs_u64.mask51, Vermilion.Bits.shl,
+    masked_mod] <;> omega
 '''
     header=original.split('namespace '+TARGET,1)[0]
     if not header.startswith('import Vermilion.Obligations\nimport generated.field_u64.Specs\n'):
