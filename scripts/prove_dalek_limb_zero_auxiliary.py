@@ -54,17 +54,17 @@ def generate(index_bytes,source_bytes,spec_bytes):
     have hhigh := Vermilion.Bits.band_lt 64 x 2251799813685247
     norm_num at hhigh
     omega
-  have hreduce : tmp_.1 = layer_a.specs.field_specs_u64.spec_reduce self.1 := by
+  have hreduce : layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs tmp_ =
+      layer_a.specs.field_specs_u64.spec_reduce (layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs self) := by
     exact call_reduce_ensures_2
-  have hlen0 : 0 < Vermilion.Seq.len tmp_.1 := by
-    have h := call_reduce_ensures_0
+  have hlen0 : 0 < Vermilion.Seq.len (layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs tmp_) := by
     omega
   have hlen2 : 0 < Vermilion.Seq.len limbs_ssa_2 := by
     rw [assume_59, Vermilion.Seq.len_update,
         assume_52, Vermilion.Seq.len_update]
     omega
   have hread52 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_52
-  rw [Vermilion.Seq.index_update_same tmp_.1 0 _ (by omega) (by omega)] at hread52
+  rw [Vermilion.Seq.index_update_same (layer_a.backend.serial.u64.field.FieldElement51.get_FieldElement51_limbs tmp_) 0 _ (by omega) (by omega)] at hread52
   have hread59 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_59
   rw [Vermilion.Seq.index_update_other limbs_ssa 0 _ 1 (by decide)] at hread59
   have hread61 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_61
