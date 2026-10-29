@@ -19,12 +19,16 @@ def main(module,index,module_lean,specs):
     assert "have masked_mod (x : Int)" in lean
     assert "Vermilion.Bits.band_nonneg 64 x 2251799813685247" in lean
     assert "Vermilion.Bits.band_lt 64 x 2251799813685247" in lean
-    assert "have hlen_reduced : Vermilion.Seq.len (layer_a.specs.field_specs_u64.spec_reduce self.1) = 5" in lean
-    assert "rw [← hreduce]" in lean
-    assert "exact call_reduce_ensures_0" in lean
+    assert "have hlen0 : 0 < Vermilion.Seq.len tmp_.1" in lean
+    assert "have hlen2 : 0 < Vermilion.Seq.len limbs_ssa_2" in lean
     assert "have hreduce : tmp_.1 = layer_a.specs.field_specs_u64.spec_reduce self.1" in lean
     assert "exact call_reduce_ensures_2" in lean
-    assert "[hlen_reduced, hreduce, " in lean
+    for n in (52,59,61,66,68,73,75,80,82,84):
+        assert f"have hread{n} := congrArg" in lean
+    assert "Vermilion.Seq.index_update_same tmp_.1 0" in lean
+    assert "Vermilion.Seq.index_update_same limbs_ssa_2 0" in lean
+    assert lean.count("Vermilion.Seq.index_update_other") == 8
+    assert "rw [hread84, hread82, hread80, hread75, hread73, hread68, hread66," in lean
     count=1
     assert m.generate(raw,src,sp)==(lean,report);count+=1
     reject(s=src+b' ');count+=1

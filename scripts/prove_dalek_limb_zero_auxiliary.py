@@ -47,7 +47,6 @@ def generate(index_bytes,source_bytes,spec_bytes):
     reduced=f'layer_a.specs.field_specs_u64.spec_reduce ({src})'
     target=f'layer_a.specs.field_specs_u64.reduce_with_q_spec ({reduced}) (layer_a.specs.field_specs_u64.compute_q_spec ({reduced}))'
     goal=f'Vermilion.Seq.index limbs_ssa_10 0 = Vermilion.Seq.index ({target}) 0'
-    writes=', '.join('assume_'+str(n) for n in reversed(ASSUMES))
     proof=f'''  have masked_mod (x : Int) :
       (Vermilion.Bits.band 64 x 2251799813685247) % 18446744073709551616 =
         Vermilion.Bits.band 64 x 2251799813685247 := by
@@ -57,10 +56,36 @@ def generate(index_bytes,source_bytes,spec_bytes):
     omega
   have hreduce : tmp_.1 = layer_a.specs.field_specs_u64.spec_reduce self.1 := by
     exact call_reduce_ensures_2
-  have hlen_reduced : Vermilion.Seq.len (layer_a.specs.field_specs_u64.spec_reduce self.1) = 5 := by
-    rw [← hreduce]
-    exact call_reduce_ensures_0
-  simp (disch := omega) [hlen_reduced, hreduce, {writes},
+  have hlen0 : 0 < Vermilion.Seq.len tmp_.1 := by
+    have h := call_reduce_ensures_0
+    omega
+  have hlen2 : 0 < Vermilion.Seq.len limbs_ssa_2 := by
+    rw [assume_59, Vermilion.Seq.len_update,
+        assume_52, Vermilion.Seq.len_update]
+    omega
+  have hread52 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_52
+  rw [Vermilion.Seq.index_update_same tmp_.1 0 _ (by omega) (by omega)] at hread52
+  have hread59 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_59
+  rw [Vermilion.Seq.index_update_other limbs_ssa 0 _ 1 (by decide)] at hread59
+  have hread61 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_61
+  rw [Vermilion.Seq.index_update_same limbs_ssa_2 0 _ (by omega) (by omega)] at hread61
+  have hread66 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_66
+  rw [Vermilion.Seq.index_update_other limbs_ssa_3 0 _ 2 (by decide)] at hread66
+  have hread68 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_68
+  rw [Vermilion.Seq.index_update_other limbs_ssa_4 0 _ 1 (by decide)] at hread68
+  have hread73 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_73
+  rw [Vermilion.Seq.index_update_other limbs_ssa_5 0 _ 3 (by decide)] at hread73
+  have hread75 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_75
+  rw [Vermilion.Seq.index_update_other limbs_ssa_6 0 _ 2 (by decide)] at hread75
+  have hread80 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_80
+  rw [Vermilion.Seq.index_update_other limbs_ssa_7 0 _ 4 (by decide)] at hread80
+  have hread82 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_82
+  rw [Vermilion.Seq.index_update_other limbs_ssa_8 0 _ 3 (by decide)] at hread82
+  have hread84 := congrArg (fun s : Vermilion.Seq Int => Vermilion.Seq.index s 0) assume_84
+  rw [Vermilion.Seq.index_update_other limbs_ssa_9 0 _ 4 (by decide)] at hread84
+  rw [hread84, hread82, hread80, hread75, hread73, hread68, hread66,
+      hread61, hread59, hread52, hreduce]
+  simp (disch := omega) [
     layer_a.specs.field_specs_u64.reduce_with_q_spec,
     layer_a.specs.field_specs_u64.compute_unmasked_limbs,
     layer_a.specs.field_specs_u64.compute_q_spec,
