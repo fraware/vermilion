@@ -738,7 +738,8 @@ jobs:
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:$HOME/.elan/bin:$PATH"
           out=".vermilion/dalek-provenance"
-          python3 -m py_compile scripts/prove_dalek_limb_zero_auxiliary.py tests/test_dalek_limb_zero_auxiliary.py scripts/audit_dalek_limb_zero_auxiliary.py
+          python3 -m py_compile scripts/prove_dalek_limb_zero_auxiliary.py tests/test_dalek_limb_zero_auxiliary.py scripts/audit_dalek_limb_zero_auxiliary.py tests/test_dalek_limb_zero_axioms.py
+          python3 tests/test_dalek_limb_zero_axioms.py
           python3 tests/test_dalek_limb_zero_auxiliary.py \
             --module scripts/prove_dalek_limb_zero_auxiliary.py \
             --index "$out/ssa-target-lean-index.json" \
@@ -762,6 +763,10 @@ jobs:
           python3 scripts/audit_dalek_limb_zero_auxiliary.py \
             --stdout "$out/ssa-limb-zero-auxiliary.stdout" \
             --receipt "$out/ssa-limb-zero-auxiliary-axioms.json"
+            --source-receipt "$out/ssa-limb-zero-auxiliary.json" \\
+            --lean "$out/ssa-limb-zero-auxiliary.lean"
+          (cd "$out" && sha256sum ssa-limb-zero-auxiliary.lean ssa-limb-zero-auxiliary.stdout ssa-limb-zero-auxiliary.json ssa-limb-zero-auxiliary-axioms.json >> SHA256SUMS)
+          (cd "$out" && sha256sum --check --strict --status SHA256SUMS)
           echo "LIMB_ZERO_AUXILIARY_KERNEL_CHECKED_NOT_ORIGINAL_VC"
       - name: Kernel-check 87 source-keyed sequence-index bound proofs
         shell: bash
