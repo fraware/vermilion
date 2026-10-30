@@ -762,8 +762,8 @@ jobs:
           fi
           python3 scripts/audit_dalek_limb_zero_auxiliary.py \
             --stdout "$out/ssa-limb-zero-auxiliary.stdout" \
-            --receipt "$out/ssa-limb-zero-auxiliary-axioms.json"
-            --source-receipt "$out/ssa-limb-zero-auxiliary.json" \\
+            --receipt "$out/ssa-limb-zero-auxiliary-axioms.json" \
+            --source-receipt "$out/ssa-limb-zero-auxiliary.json" \
             --lean "$out/ssa-limb-zero-auxiliary.lean"
           (cd "$out" && sha256sum ssa-limb-zero-auxiliary.lean ssa-limb-zero-auxiliary.stdout ssa-limb-zero-auxiliary.json ssa-limb-zero-auxiliary-axioms.json >> SHA256SUMS)
           (cd "$out" && sha256sum --check --strict --status SHA256SUMS)

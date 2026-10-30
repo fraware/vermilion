@@ -20,11 +20,11 @@ def validate_native_inputs(source_receipt, lean):
                 "whole_case_study_verified":False}.items():
         if meta.get(k)!=v: raise ValueError("invalid source-pinned receipt: "+k)
     content=lean.read_text()
-    if len(re.findall(r"(?m)^theorem vermilion_limb_zero_diagnostic\\b",content))!=1:
+    if len(re.findall(r"(?m)^theorem vermilion_limb_zero_diagnostic\b",content))!=1:
         raise ValueError("missing or duplicate theorem")
     if "#print axioms "+NAME not in content:
         raise ValueError("missing axiom query")
-    if re.search(r"\\b(sorry|admit|sorryAx)\\b",content,re.I):
+    if re.search(r"\b(sorry|admit|sorryAx)\b",content,re.I):
         raise ValueError("admitted Lean source")
     return {"lean_sha256":hashlib.sha256(lean.read_bytes()).hexdigest(),
             "pre_native_receipt_sha256":hashlib.sha256(source_receipt.read_bytes()).hexdigest()}

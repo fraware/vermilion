@@ -2,7 +2,9 @@
 """Negative controls for source-pinned Lean first-limb axiom acceptance."""
 import json
 import tempfile
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.audit_dalek_limb_zero_auxiliary import (
     SOURCE_PIN,SPECS_PIN,ORIGINAL_HASH,UPDATES,NAME,check
 )
@@ -12,8 +14,8 @@ with tempfile.TemporaryDirectory() as td:
       pinned_updates=UPDATES,diagnostic_only_limb=0,isolated_auxiliary_native_accepted=False,
       original_ensures_154_proven=False,source_to_lean_refinement_proven=False,
       whole_case_study_verified=False)
-    theorem="theorem vermilion_limb_zero_diagnostic : True := by\\n  trivial\\n#print axioms "+NAME+"\\n"
-    stdout="'"+NAME+"' depends on axioms: [propext, Classical.choice, Quot.sound]\\n"
+    theorem="theorem vermilion_limb_zero_diagnostic : True := by\n  trivial\n#print axioms "+NAME+"\n"
+    stdout="'"+NAME+"' depends on axioms: [propext, Classical.choice, Quot.sound]\n"
     def run(meta=data,code=theorem,log=stdout):
         src.write_text(json.dumps(meta));lean.write_text(code)
         check(log,out,src,lean)
@@ -29,7 +31,7 @@ with tempfile.TemporaryDirectory() as td:
     rejects(log=stdout+stdout)
     rejects(log="missing axiom report")
     rejects(log=stdout.replace("Quot.sound","unapproved.axiom"))
-    rejects(code=theorem+"\\nsorry\\n")
+    rejects(code=theorem+"\nsorry\n")
     rejects(code=theorem.replace("#print axioms","#check"))
     rejects(meta=dict(data,source_pin="0"*64))
     rejects(meta=dict(data,specs_pin="0"*64))
