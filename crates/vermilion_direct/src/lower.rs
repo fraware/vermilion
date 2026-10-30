@@ -1596,6 +1596,65 @@ mod capture_avoiding_binder_tests {
     }
 
     #[test]
+    fn index_ssa_fresh_name_excludes_symbolic_assignment_inputs() {
+        // This models a symbolic old-sequence value and RHS that happen to
+        // share the candidate SSA spelling; the chosen binder must differ.
+        let mut occupied = HashSet::new();
+        reserve_expr_names(&Expr::Var("bytes_ssa".into()), &mut occupied);
+        reserve_expr_names(&Expr::Var("bytes_ssa_2".into()), &mut occupied);
+        let mut used = vec!["bytes_ssa_3".to_owned()];
+        let next = fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied);
+        assert_eq!(next, "bytes_ssa_4");
+        assert_eq!(used.last().map(String::as_str), Some("bytes_ssa_4"));
+        assert!(!occupied.contains(&next));
+        assert_eq!(
+            fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied),
+            "bytes_ssa_5"
+        );
+    }
+
+    #[test]
+    fn index_ssa_avoids_lean_normalization_collisions() {
+        // Each raw spelling normalizes to a distinct occupied candidate.
+        // Source-name collisions must not be introduced in generated Lean.
+        let occupied = HashSet::from([
+            "bytes-ssa".to_owned(),
+            "bytes.ssa_2".to_owned(),
+            "bytes%ssa_3".to_owned(),
+        ]);
+        let mut used = Vec::new();
+        assert_eq!(
+            fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied),
+            "bytes_ssa_4"
+        );
+        assert_eq!(
+            fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied),
+            "bytes_ssa_5"
+        );
+    }
+
+    #[test]
+    fn index_ssa_name_matches_lean_segment_conventions() {
+        assert_eq!(indexed_ssa_lean_segment("a-b"), "a_b");
+        assert_eq!(indexed_ssa_lean_segment("a.b"), "a_b");
+        assert_eq!(indexed_ssa_lean_segment("from"), "from_");
+        assert_eq!(indexed_ssa_lean_segment("9data"), "_9data");
+        assert_eq!(indexed_ssa_lean_segment(""), "_anonymous");
+    }
+
+    #[test]
+    fn index_ssa_reserves_future_source_identifier() {
+        // Source symbols introduced after the update are still reserved.
+        // A symbolic equation using this fresh name would otherwise mask
+        // the distinct future source identifier.
+        let mut used = Vec::new();
+        let occupied = HashSet::from(["bytes_ssa".to_owned()]);
+        let name = fresh_indexed_ssa_name("bytes_ssa", &mut used, &occupied);
+        assert_eq!(name, "bytes_ssa_2");
+        assert_ne!(name, "bytes_ssa");
+    }
+
+    #[test]
     fn nested_choose_and_lambda_names_are_reserved() {
         let e = Expr::Lambda(
             vec![Binder::new("j", Ty::Int)],
@@ -3530,6 +3589,13 @@ fn fun_display_name(fun: &vir::ast::Fun) -> String {
 struct Lowering<'a> {
     env: Env,
     ctx: ExpCtx<'a>,
+    /// Opt-in indexed SSA is scoped to the one unacquired dalek function.
+    /// Other functions must remain bit-for-bit statement-hash stable.
+    ssa_indexed_as_bytes: bool,
+    /// Names in the entire checked SST body and its contracts: an identifier
+    /// introduced later must not capture an SSA value introduced earlier.
+    /// Populated only for the exact opt-in dalek-lite function.
+    ssa_source_names: std::collections::HashSet<String>,
     statements: Vec<Statement>,
     post_dest: Option<VarIdent>,
     post_exps: Vec<Exp>,
@@ -3567,6 +3633,66 @@ struct LoopFrame {
     /// Per-frame site ordinals keeping break/continue assert ids unique.
     break_sites: usize,
     continue_sites: usize,
+}
+
+/// Keep the experimental SSA name check aligned with Lean's
+/// `leanSegment` renderer (lean/Vermilion/Ir/Ast.lean). Comparing raw
+/// identifiers is insufficient: `bytes-ssa` and `bytes_ssa` render
+/// as the same Lean binder. Preserve the keyword-suffix convention too.
+fn indexed_ssa_lean_segment(raw: &str) -> String {
+    let sanitized: String = raw
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .collect();
+    let prefixed = if raw.chars().next().is_some_and(|c| c.is_numeric()) {
+        format!("_{sanitized}")
+    } else {
+        sanitized
+    };
+    if prefixed.is_empty() {
+        return "_anonymous".to_owned();
+    }
+    const LEAN_RESERVED: &[&str] = &[
+        "end", "by", "do", "from", "with", "then", "else", "show",
+        "have", "let", "fun", "match", "where", "calc", "at", "in",
+        "open", "section", "namespace", "variable", "example",
+        "theorem", "def", "deriving", "instance", "class", "structure",
+        "inductive", "abbrev", "axiom", "mutual", "macro", "notation",
+        "attribute", "if",
+    ];
+    if LEAN_RESERVED.contains(&prefixed.as_str()) {
+        format!("{prefixed}_")
+    } else {
+        prefixed
+    }
+}
+
+/// The opt-in SSA binder must be fresh after Lean identifier normalization
+/// relative to both generated binders and symbolic source values used by
+/// its defining equation. Reserve the selected name for later allocations.
+/// Leave the production allocator unchanged.
+fn fresh_indexed_ssa_name(
+    base: &str,
+    used: &mut Vec<String>,
+    occupied: &std::collections::HashSet<String>,
+) -> String {
+    let base = indexed_ssa_lean_segment(base);
+    let occupied_rendered: std::collections::HashSet<String> = occupied
+        .iter()
+        .map(|name| indexed_ssa_lean_segment(name))
+        .collect();
+    let used_rendered: std::collections::HashSet<String> = used
+        .iter()
+        .map(|name| indexed_ssa_lean_segment(name))
+        .collect();
+    let mut candidate = base.clone();
+    let mut suffix = 1usize;
+    while occupied_rendered.contains(&candidate) || used_rendered.contains(&candidate) {
+        suffix += 1;
+        candidate = format!("{base}_{suffix}");
+    }
+    used.push(candidate.clone());
+    candidate
 }
 
 impl Lowering<'_> {
@@ -5581,7 +5707,55 @@ impl Lowering<'_> {
                         root.0, EXPR_SUBSTITUTION_BUDGET
                     ));
                 }
-                self.env.insert(root, value);
+                // Research-only structural sharing for a sequence-element
+                // assignment.  A fresh, typed symbol plus its defining
+                // equation is logically equivalent to substituting the
+                // functional update into all subsequent obligations:
+                //
+                //   ∀ next, next = update(current, index, rhs) → P(next)
+                //       ↔ P(update(current, index, rhs)).
+                //
+                // Only the exact dalek-lite as_bytes function is eligible,
+                // safeguarding every existing obligation outside that scope.
+                // This prevents repeated indexed writes from embedding each
+                // previous sequence tree in the next write. Do not change the
+                // default lowering until native differential and case-study
+                // comparison, including statement-hash migration, is complete.
+                let share_index_assignment =
+                    self.ssa_indexed_as_bytes
+                    && matches!(path.as_slice(), [DestProj::Index(_)])
+                    && self.loop_frames.is_empty();
+                if share_index_assignment {
+                    let root_type = self.var_types.get(&root).cloned().ok_or_else(|| {
+                        format!("SSA indexed update lacks original root type for `{}`", root.0)
+                    })?;
+                    // A fresh equation is equivalent to substitution only
+                    // when the new binder is disjoint from all symbolic
+                    // values already present in the assignment and current
+                    // environment. Include registry-held prophecy symbols.
+                    let mut occupied = binding_occupied_names(self.ctx, &self.env);
+                    occupied.extend(self.ssa_source_names.iter().cloned());
+                    reserve_expr_names(&value, &mut occupied);
+                    let name = fresh_indexed_ssa_name(
+                        &format!("{}_ssa", root.0),
+                        &mut self.used_binder_names,
+                        &occupied,
+                    );
+                    let binder = Binder::new(name.clone(), binder_type(self.ctx, &root_type)?);
+                    self.statements.push(Statement::Fresh(binder));
+                    self.statements.push(Statement::Assume(Expr::binary(
+                        BinOp::Eq,
+                        Expr::Var(name.clone()),
+                        value,
+                    )));
+                    self.env.insert(root, Expr::Var(name.clone()));
+                    // Research-only execution receipt. Exact-head CI checks
+                    // that the selected function really emitted indexed SSA
+                    // equations, not merely that its selector matched.
+                    eprintln!("VRML_SSA_INDEX_EQ binder={name}");
+                } else {
+                    self.env.insert(root, value);
+                }
             }
             StmX::If(cond, then_stm, else_stm) => {
                 self.branch(cond, then_stm, else_stm.as_ref())?;
@@ -6215,9 +6389,63 @@ fn function_view_impl(
         format!("function {} has no exec proof check", segments.join("::"))
     })?;
 
+    // The SST function path may carry the synthetic layer_a crate as a
+    // leading *path segment* (CrateId::Internal prints as "crate").
+    // Match the exact Verus function path instead of reconstructing it
+    // from a presumed crate name. This avoids changing unrelated `mul` VCs.
+    let source_path = function.x.name.path.segments.iter()
+        .map(|s| s.as_str()).collect::<Vec<_>>().join(".");
+    let ssa_indexed_as_bytes =
+        std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
+        && (
+            source_path == "layer_a.backend.serial.u64.field.impl__16.as_bytes"
+            || source_path == "backend.serial.u64.field.impl__16.as_bytes"
+            || source_path == "backend.serial.u64.field.impl&%16.as_bytes"
+        );
+    if std::env::var("VERMILION_EXPERIMENTAL_SSA_INDEX").as_deref() == Ok("1")
+        && id.name == "as_bytes" {
+        eprintln!(
+            "VRML_SSA_TARGET_DIAGNOSTIC crate={} modules={} name={} source_path={} selected={}",
+            id.crate_name, id.modules.join("."), id.name,
+            source_path, ssa_indexed_as_bytes
+        );
+    }
+    // Preserve source identifiers across the WHOLE selected SST function.
+    // Looking only at the current symbolic environment misses locals that
+    // appear later; choosing one of their names for a fresh SSA variable
+    // would incorrectly conflate two distinct program values.
+    // Existing exhaustive expression/statement visitors are reused, and
+    // nonexperimental functions pay no additional traversal cost.
+    let mut ssa_source_names = std::collections::HashSet::<String>::new();
+    if ssa_indexed_as_bytes {
+        let mut reserve_exp = |exp: &Exp| {
+            exp_visit_vars(exp, &mut |ident| {
+                ssa_source_names.insert(ident.0.to_string());
+            });
+        };
+        stm_visit_exps(&check.body, &mut reserve_exp);
+        for statement in check.local_decls_decreases_init.iter() {
+            stm_visit_exps(statement, &mut reserve_exp);
+        }
+        for expression in check.reqs.iter().chain(check.post_condition.ens_exps.iter()) {
+            reserve_exp(expression);
+        }
+        drop(reserve_exp);
+        for parameter in function.x.pars.iter() {
+            ssa_source_names.insert(parameter.x.name.0.to_string());
+        }
+        if let Some(destination) = &check.post_condition.dest {
+            ssa_source_names.insert(destination.0.to_string());
+        }
+        for parameter in function.x.typ_params.iter() {
+            ssa_source_names.insert(parameter.to_string());
+        }
+    }
     let mut lowering = Lowering {
         env: Env::new(),
         ctx,
+        ssa_indexed_as_bytes,
+        ssa_source_names,
         statements: Vec::new(),
         post_dest: check.post_condition.dest.clone(),
         post_exps: check.post_condition.ens_exps.iter().cloned().collect(),
